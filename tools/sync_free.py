@@ -157,6 +157,41 @@ SOURCE_PATCHES = [
      "    document.querySelectorAll('#page-daily, #page-pvp').forEach(page => {",
      "    document.querySelectorAll('#page-daily, #page-aipvp').forEach(page => {  // [FREE BUILD] pvp 免费",
      "锁幕选择器对齐拆分线"),
+    # 9) 默认落地页 = PVP 对战(免费噱头页), 而非主仓的丢球助手页;
+    #    同时改掉「vision → throw」的用户模式回退跳转(vision 已删, 回 pvp)
+    ("src/gui/web/index.html",
+     '<section class="page active" id="page-auto">',
+     '<section class="page" id="page-auto">  <!-- [FREE BUILD] 默认页改 pvp -->',
+     "默认 active 页摘除(auto)"),
+    ("src/gui/web/index.html",
+     '<section class="page" id="page-pvp">',
+     '<section class="page active" id="page-pvp">',
+     "默认 active 页置为 pvp"),
+    ("src/gui/web/index.html",
+     '<button class="nav-item active" data-page="auto" onclick="switchPage(\'throw\')">',
+     '<button class="nav-item" data-page="auto" onclick="switchPage(\'throw\')">  <!-- [FREE BUILD] -->',
+     "默认导航高亮摘除(auto)"),
+    ("src/gui/web/index.html",
+     '<button class="nav-item" data-page="pvp" onclick="switchPage(\'pvp\')">',
+     '<button class="nav-item active" data-page="pvp" onclick="switchPage(\'pvp\')">',
+     "默认导航高亮置为 pvp"),
+    ("src/gui/web/assets/app.js",
+     "            if (document.querySelector('#page-vision.active')) switchPage('throw');",
+     "            if (document.querySelector('#page-auto.active')) switchPage('pvp');  // [FREE BUILD]",
+     "用户模式回退跳转改 pvp"),
+    # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
+    ("src/gui/web/battle_hud.html",
+     '            <button class="btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
+     '            <button class="btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
+     "悬浮窗隐藏 AI 接管按钮"),
+    ("src/gui/web/battle_hud.html",
+     "        b.classList.toggle('active', on);\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
+     "        b.classList.toggle('active', on);\n        b.style.display = 'none';  // [FREE BUILD] AI 接管属付费, 状态刷新也保持隐藏\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
+     "接管按钮状态刷新保持隐藏"),
+    ("src/gui/web/battle_hud.html",
+     '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
+     'AI 军师建议对免费版完整可用',
+     "军师空态文案去接管引导(HTML+JS默认值)"),
 ]
 
 # ---------------- 存根 ----------------
@@ -527,14 +562,16 @@ def iter_source_files(main_root: Path):
 
 
 def apply_source_patches(main_root: Path, out_root: Path) -> None:
-    """对产出的免费树打源码补丁; 任一条未命中即报错(防主仓漂移后静默失效)"""
+    """对产出的免费树打源码补丁; 命中次数必须 ≥1(允许同锚点多处, 逐处替换),
+    零命中即报错(防主仓漂移后静默失效)"""
     for rel, old, new, why in SOURCE_PATCHES:
         dst = out_root / rel
         text = dst.read_text(encoding="utf-8")
-        if text.count(old) != 1:
-            raise SystemExit(f"[sync_free] 补丁锚点失效({why}): {rel} 命中 {text.count(old)} 次, 请核对主仓改动")
+        n = text.count(old)
+        if n < 1:
+            raise SystemExit(f"[sync_free] 补丁锚点失效({why}): {rel} 命中 0 次, 请核对主仓改动")
         dst.write_text(text.replace(old, new), encoding="utf-8")
-        print(f"[sync_free] 补丁 OK: {why} ({rel})")
+        print(f"[sync_free] 补丁 OK: {why} ({rel}, x{n})")
 
 
 def main() -> None:
