@@ -247,8 +247,11 @@ SOURCE_PATCHES = [
      "隐藏标题栏壁纸按钮"),
     ("src/gui/web/index.html",
      "    function init() {\n        var c = customUrl();",
-     "    function init() {\n        return; // [FREE BUILD] 壁纸为付费特权, 免费版不应用任何壁纸\n        var c = customUrl();",
-     "免费版禁用壁纸启动应用"),
+     "    function init() {\n"
+     "        // [FREE BUILD] 壁纸切换为付费特权; 免费版固定默认壁纸(好看但不给换)\n"
+     "        _paint(WALLPAPERS[0].url); return;\n"
+     "        var c = customUrl();",
+     "免费版固定默认壁纸(不可切换)"),
     ("src/gui/web/assets/pvp.js",
      "{ ocr: 'OCR 识别', capture: '自研抓包', rkpp: '自研解码' }",
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",
