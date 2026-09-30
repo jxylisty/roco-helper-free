@@ -188,6 +188,20 @@ SOURCE_PATCHES = [
      '127.0.0.1:17365',
      '127.0.0.1:17366',
      "Tauri 壳端口 17366(两处)"),
+    # 12) web_adapter 适配器: Tauri/WebView2 下 location.origin 是 http://tauri.localhost
+    #     (也以 http 开头, 主仓的 origin 推断必然选中它) → RPC/WS 全部打到 Tauri 静态
+    #     资源服务, 后端 17366 完全收不到 → "启动识别点了没反应"。免费版端口独立,
+    #     直接硬编码, 不做任何 origin 推断。
+    ("src/gui/web/assets/web_adapter.js",
+     "    const API_BASE = window.location.origin.startsWith('http') \n        ? window.location.origin \n        : 'http://127.0.0.1:17365';",
+     "    // [FREE BUILD] Tauri/WebView2 的 origin 是 http://tauri.localhost(也以 http 开头),\n"
+     "    // 主仓的 origin 推断必然选错; 免费版端口独立(17366), 硬编码后端基址\n"
+     "    const API_BASE = 'http://127.0.0.1:17366';",
+     "适配器 API_BASE 硬编码 17366"),
+    ("src/gui/web/assets/web_adapter.js",
+     "        const wsHost = (window.location.protocol.startsWith('http') && window.location.host)\n            ? window.location.host\n            : '127.0.0.1:17365';",
+     "        // [FREE BUILD] 同 API_BASE: Tauri 下 location.host 是 tauri.localhost, 硬编码\n        const wsHost = '127.0.0.1:17366';",
+     "适配器 WS host 硬编码 17366"),
     # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
     ("src/gui/web/battle_hud.html",
      '            <button class="btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
