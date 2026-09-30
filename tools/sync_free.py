@@ -151,12 +151,12 @@ SOURCE_PATCHES = [
      '    def bag_open_and_scan(self) -> dict:\n        """打开背包',
      '    def bag_open_and_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """打开背包',
      "bag_open_and_scan 补闸门"),
-    # 8) 锁幕选择器与拆分线对齐: 主仓锁 pvp(付费), 免费版 pvp 是噱头必须放开, 改锁 aipvp
-    #    (aipvp 实际被 switchPage 拦截弹会员引导, 锁幕只是直连兜底)
+    # 8) 锁幕选择器与拆分线对齐: 主仓锁 pvp/aipvp/daily, 免费版 pvp 是噱头必须放开,
+    #    只锁 aipvp+daily
     ("src/gui/web/assets/app.js",
-     "    document.querySelectorAll('#page-daily, #page-pvp').forEach(page => {",
-     "    document.querySelectorAll('#page-daily, #page-aipvp').forEach(page => {  // [FREE BUILD] pvp 免费",
-     "锁幕选择器对齐拆分线"),
+     "    document.querySelectorAll('#page-pvp, #page-aipvp, #page-daily').forEach(page => {",
+     "    document.querySelectorAll('#page-aipvp, #page-daily').forEach(page => {  // [FREE BUILD] pvp 免费",
+     "锁幕选择器对齐拆分线(pvp 摘除)"),
     # 9) 默认落地页 = PVP 对战(免费噱头页), 而非主仓的丢球助手页;
     #    同时改掉「vision → throw」的用户模式回退跳转(vision 已删, 回 pvp)
     ("src/gui/web/index.html",
@@ -179,6 +179,15 @@ SOURCE_PATCHES = [
      "            if (document.querySelector('#page-vision.active')) switchPage('throw');",
      "            if (document.querySelector('#page-auto.active')) switchPage('pvp');  // [FREE BUILD]",
      "用户模式回退跳转改 pvp"),
+    # 11) 免费版端口独立(17366), 不与付费版(17365)互抢 — Tauri 壳 + server_main 默认端口同步改
+    ("server_main.py",
+     'default=17365',
+     'default=17366',
+     "server_main 默认端口 17366"),
+    ("src-tauri/src/main.rs",
+     '127.0.0.1:17365',
+     '127.0.0.1:17366',
+     "Tauri 壳端口 17366(两处)"),
     # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
     ("src/gui/web/battle_hud.html",
      '            <button class="btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
@@ -574,12 +583,17 @@ def iter_source_files(main_root: Path):
 
 def apply_source_patches(main_root: Path, out_root: Path) -> None:
     """对产出的免费树打源码补丁; 命中次数必须 ≥1(允许同锚点多处, 逐处替换),
-    零命中即报错(防主仓漂移后静默失效)"""
+    零命中时检查替换文本是否已存在(幂等补丁), 仍未命中才报错。"""
     for rel, old, new, why in SOURCE_PATCHES:
         dst = out_root / rel
+        if not dst.exists():
+            raise SystemExit(f"[sync_free] 补丁目标不存在({why}): {rel}")
         text = dst.read_text(encoding="utf-8")
         n = text.count(old)
         if n < 1:
+            if new in text:
+                print(f"[sync_free] 补丁跳过(已应用): {why} ({rel})")
+                continue
             raise SystemExit(f"[sync_free] 补丁锚点失效({why}): {rel} 命中 0 次, 请核对主仓改动")
         dst.write_text(text.replace(old, new), encoding="utf-8")
         print(f"[sync_free] 补丁 OK: {why} ({rel}, x{n})")
