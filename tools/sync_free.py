@@ -30,15 +30,14 @@ FREE_QQ = "3808239548"
 #   简单名     = 任意层级路径段命中即排除
 EXCLUDE_DIRS = [
     "server/",           # 顶层授权服务端（worker.js 等; src/server 是 FastAPI 本体, 保留）
-    "src/capture/",      # 抓包 + RKPP + 截屏后端（免费军师走 OCR 源; 仅强制包含窗口截屏三件套）
-    "src/tasks/",        # 日常任务执行器（付费）
+    "src/tasks/",        # 日常任务执行器（付费, 执行器整体不入树）
     "src/gui/studio/",   # 视觉工坊独立前端（开发者）
     "build", "dist",     # 构建产物
     ".git", "__pycache__", ".vscode", ".idea", ".zcode",
     ".venv", "venv",               # 虚拟环境
     ".pytest_cache", ".ruff_cache", ".mypy_cache", "htmlcov",
     "node_modules", ".github",
-    "data/",             # 运行数据（历史库/截图/抓包缓存）; 注意 src/pvp/data 是竞技数据, 不匹配
+    "data/",             # 根级运行数据（历史库/截图/抓包缓存）; 注意 src/pvp/data 是竞技数据, 不匹配
     "data/config/",      # 根级运行配置（含用户 settings; ROI 模板由 INCLUDE_FORCE 带入）
     "docs",              # 主仓内部文档（本仓库有自己的 docs）
     "output",            # 对局截图/敌方头像/OCR 失败帧（含用户对局数据）
@@ -48,6 +47,8 @@ EXCLUDE_DIRS = [
 ]
 
 # 文件级排除（相对主仓根的 POSIX 路径）
+# 付费自动化「物理抽壳」: 丢球工具/挂机引擎本体由 STUBS 顶替(属性面兼容),
+# 拟人按键层/AI 接管/背包 OCR 整文件不进树 —— 改闸门也变不出执行代码。
 EXCLUDE_FILES = [
     # 根目录调试残留
     "_exp_battle_events.json",
@@ -58,6 +59,13 @@ EXCLUDE_FILES = [
     "src/gui/auth_core.py",
     "src/gui/auth_core.pyd",
     "src/gui/bridge_auth.py",
+    # 付费自动化执行层（由存根顶替或直接缺席）
+    "auto_throw_ball.py",             # 丢球工具本体(Interception 按键) → STUB
+    "src/states/battle_engine.py",    # 挂机引擎(自动战斗) → STUB
+    "src/gui/ai_autopilot.py",        # AI 接管控制器（懒导入, 闸门先行）
+    "src/driver/human_input.py",      # 拟人按键规划+执行层
+    "src/perception/bag_scanner.py",  # 背包 OCR 盘点（付费）
+    "src/perception/ball_watcher.py", # 咕噜球槽位监视（丢球辅助）
     # 抓包工具与测试
     "tests/test_capture.py",
     # 构建链与密钥
@@ -68,12 +76,7 @@ EXCLUDE_FILES = [
 ]
 
 # 强制包含（位于被排除目录内, 但免费功能依赖的文件; 优先于目录排除）
-# 依据: 军师 OCR 管线需要窗口截屏; ROI 模板是识别坐标系, 无敏感数据
 INCLUDE_FORCE = [
-    "src/capture/__init__.py",        # 仅 docstring
-    "src/capture/window_capture.py",  # win32 窗口截屏, 无 src.* 依赖
-    "src/capture/fast_capture.py",    # mss 快速截屏, 无 src.* 依赖
-    "src/capture/snapshot_adapter.py",  # 采集源适配层(纯翻译, 无抓包; OCR 路径引用)
     "data/config/roi_templates/*.json",  # ROI 坐标模板(仅 json, 不带用户截图 png)
 ]
 
@@ -89,11 +92,31 @@ SOURCE_PATCHES = [
      'if getattr(sys, "frozen", False):\n    DEV_MODE = False\nelse:\n    _env_dev = os.environ.get("LKW_DEV_MODE")\n    DEV_MODE = (_env_dev != "0")',
      'DEV_MODE = False  # [FREE BUILD] 免费版强制用户模式: 隐藏视觉调试台等开发者入口',
      "钉死 DEV_MODE=False"),
-    # 2) 丢球热键不注册: F4/F9/F10 是付费丢球功能的全局热键
-    ("auto_throw_ball.py",
-     "        keyboard.add_hotkey('f4', self.toggle)\n        keyboard.add_hotkey('f9', self.toggle_bomber)\n        keyboard.add_hotkey('f10', self.toggle_skill)\n        self._log(\"快捷键已注册: F4 普通丢球 / F9 轰炸机 / F10 技能\", \"info\")",
-     "        # [FREE BUILD] 丢球/轰炸/技能为 Pro 功能, 不注册热键\n        self._log(\"丢球热键为 Pro 功能, 未注册\", \"info\")",
-     "摘除 F4/F9/F10 热键"),
+    # 2) 付费丢球三开关补闸门: toggle_normal/bomber/skill 直调 tool 未走鉴权,
+    #    执行层已抽壳(存根), 闸门保证连日志都不出、直接弹会员引导
+    ("src/gui/bridge_runtime.py",
+     '    def toggle_normal(self) -> dict:\n        will_start = not self.tool.running',
+     '    def toggle_normal(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 丢球为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.running',
+     "toggle_normal 补闸门"),
+    ("src/gui/bridge_runtime.py",
+     '    def toggle_bomber(self) -> dict:\n        will_start = not self.tool.bomber_running',
+     '    def toggle_bomber(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 轰炸机为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.bomber_running',
+     "toggle_bomber 补闸门"),
+    ("src/gui/bridge_runtime.py",
+     '    def toggle_skill(self) -> dict:\n        will_start = not self.tool.skill_running',
+     '    def toggle_skill(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 自动技能为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.skill_running',
+     "toggle_skill 补闸门"),
+    # 2b) PVP 识别引擎免费(AI 军师): 摘除 pvp_engine_start 的鉴权闸
+    #     (锚点以 if self._pvp_running: 后缀区分 engine_start 的同款闸)
+    ("src/gui/bridge_pvp.py",
+     '        gate = self._auth_gate()\n        if gate:\n            return gate\n        if self._pvp_running:',
+     '        # [FREE BUILD] 识别引擎免费(AI 军师), 闸门只拦自动化入口\n        if self._pvp_running:',
+     "pvp_engine_start 摘闸(免费识别)"),
+    # 2c) MCP 自玩按键注入补闸(pvp_act 无鉴权直通 human_input; human_input 已排除)
+    ("src/gui/bridge_pvp_data.py",
+     '    def pvp_act(self, action: str, delay: float = None) -> dict:\n        """执行一条 PVP 操作命令',
+     '    def pvp_act(self, action: str, delay: float = None) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] MCP 自玩为付费功能\n        if gate:\n            return gate\n        """执行一条 PVP 操作命令',
+     "pvp_act 补闸门"),
     # 3) 窗口级 F8 截图热键同样指向付费调试链路, 摘除
     ("src/gui/bridge_widget.py",
      "            keyboard.add_hotkey('f8', self._hotkey_snip)\n            keyboard.add_hotkey('f11', self._emergency_stop)",
@@ -110,26 +133,12 @@ SOURCE_PATCHES = [
      '        # 自动更新器: 后台静默检查 GitHub 新版本(仅提示, 不自动改文件)\n        self._update_hint_sent = None\n        self.updater = AutoUpdater(on_update_available=self._notify_update_available)',
      '        # [FREE BUILD] 免费版更新走 QQ 群分发, 不启动 GitHub 更新器\n        self._update_hint_sent = None\n        self.updater = None',
      "免费版停用 GitHub 更新器"),
-    # 6) 付费丢球三开关补闸门: toggle_normal/bomber/skill 直调 tool 未走鉴权,
-    #    热键摘除后这是绕过 _auth_gate 的最后一条 RPC 通路(F4/F9/F10 已不注册)
-    ("src/gui/bridge_runtime.py",
-     '    def toggle_normal(self) -> dict:\n        will_start = not self.tool.running',
-     '    def toggle_normal(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 丢球为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.running',
-     "toggle_normal 补闸门"),
-    ("src/gui/bridge_runtime.py",
-     '    def toggle_bomber(self) -> dict:\n        will_start = not self.tool.bomber_running',
-     '    def toggle_bomber(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 轰炸机为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.bomber_running',
-     "toggle_bomber 补闸门"),
-    ("src/gui/bridge_runtime.py",
-     '    def toggle_skill(self) -> dict:\n        will_start = not self.tool.skill_running',
-     '    def toggle_skill(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 自动技能为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.skill_running',
-     "toggle_skill 补闸门"),
-    # 7) 摘除 F8 后启动日志文案同步(避免免费版日志谎称 F8 可用)
+    # 6) 摘除 F8 后启动日志文案同步(避免免费版日志谎称 F8 可用)
     ("src/gui/bridge_widget.py",
      '            print("[热键] keyboard 库注册完成: F8截图/F11急停", flush=True)\n            self._enqueue_log("快捷键: F8截图/F11急停", "info")',
      '            print("[热键] keyboard 库注册完成: F11急停", flush=True)  # [FREE BUILD] F8 属付费\n            self._enqueue_log("快捷键: F11急停", "info")',
      "F8 文案同步"),
-    # 8) 背包盘点(抓包计球, 辅助丢球)属付费: bag_open 是真实按键自动化, 必须硬闸
+    # 7) 背包盘点(抓包计球, 辅助丢球)属付费: bag_open 是真实按键自动化, 必须硬闸
     ("src/gui/bridge_pvp_data.py",
      '    def bag_scan(self) -> dict:\n        """背包盘点: 优先协议直读',
      '    def bag_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """背包盘点: 优先协议直读',
@@ -142,7 +151,7 @@ SOURCE_PATCHES = [
      '    def bag_open_and_scan(self) -> dict:\n        """打开背包',
      '    def bag_open_and_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """打开背包',
      "bag_open_and_scan 补闸门"),
-    # 9) 锁幕选择器与拆分线对齐: 主仓锁 pvp(付费), 免费版 pvp 是噱头必须放开, 改锁 aipvp
+    # 8) 锁幕选择器与拆分线对齐: 主仓锁 pvp(付费), 免费版 pvp 是噱头必须放开, 改锁 aipvp
     #    (aipvp 实际被 switchPage 拦截弹会员引导, 锁幕只是直连兜底)
     ("src/gui/web/assets/app.js",
      "    document.querySelectorAll('#page-daily, #page-pvp').forEach(page => {",
@@ -234,6 +243,124 @@ STUBS = {
         '                    "message": "验证通过, 感谢支持正版"}\n'
         '        except Exception as e:\n'
         '            return {"ok": False, "verified": False, "message": f"验证服务不可达: {e}"}\n'
+    ),
+    # ---- 付费自动化「物理抽壳」存根: 属性面兼容桥接层, 执行层不入树 ----
+    "auto_throw_ball.py": (
+        '"""[Free 构建存根] 丢球/轰炸/技能为 Pro 功能: Interception 执行层不入免费树。\n'
+        '保留窗口查询(浮窗定位)与状态属性(状态栏轮询), 动作方法一律拒绝。"""\n'
+        'import ctypes\n\n'
+        'user32 = ctypes.windll.user32\n\n\n'
+        'class AutoThrowBall:\n'
+        '    TARGET_WINDOW_TITLE = "洛克王国：世界"\n'
+        '    TARGET_WINDOW_CLASS = "UnrealWindow"\n\n'
+        '    def __init__(self, on_log=None, **_):\n'
+        '        self._on_log = on_log or (lambda *a, **k: None)\n'
+        '        self._frame_provider = None\n'
+        '        self.conflict_hook = None\n'
+        '        self.running = False\n'
+        '        self.bomber_running = False\n'
+        '        self.skill_running = False\n'
+        '        self.normal_count = 0\n'
+        '        self.bomber_count = 0\n'
+        '        self.skill_count = 0\n'
+        '        self.current_state = "stopped"\n'
+        '        self.exit_on_battle = False\n'
+        '        self.stop_after_count = 0\n'
+        '        self.stop_after_minutes = 0\n'
+        '        self.selected_ball_id = None\n'
+        '        self._run_started_at = None\n'
+        '        # CONFIG_SCHEMA 延时键(_get_throw_config 逐键 getattr, 缺属性即崩)\n'
+        '        self.normal_min = 0.5\n'
+        '        self.normal_max = 0.8\n'
+        '        self.bomber_charge_min = 0.3\n'
+        '        self.bomber_charge_max = 0.5\n'
+        '        self.bomber_hover_min = 2.0\n'
+        '        self.bomber_hover_max = 2.2\n'
+        '        self.skill_min = 1.0\n'
+        '        self.skill_max = 2.0\n\n'
+        '    def _log(self, msg, level="info"):\n'
+        '        self._on_log(str(msg), level)\n\n'
+        '    def _pro(self):\n'
+        '        self._log("该功能为付费版功能, 请开通会员", "warning")\n\n'
+        '    # ---- 动作方法: RPC 层已闸, 此处兜底拒绝 ----\n'
+        '    def toggle(self):\n'
+        '        self._pro()\n'
+        '        return False\n\n'
+        '    def toggle_bomber(self):\n'
+        '        self._pro()\n'
+        '        return False\n\n'
+        '    def toggle_skill(self):\n'
+        '        self._pro()\n'
+        '        return False\n\n'
+        '    def start_normal(self):\n'
+        '        self._pro()\n'
+        '        return False\n\n'
+        '    def stop_all(self):\n'
+        '        self.running = self.bomber_running = self.skill_running = False\n'
+        '        self.current_state = "stopped"\n\n'
+        '    def register_hotkeys(self):\n'
+        '        self._log("丢球热键为 Pro 功能, 未注册", "info")\n\n'
+        '    def attach_ball_watcher(self, watcher):\n'
+        '        return {"success": False, "message": "咕噜球监视为 Pro 功能"}\n\n'
+        '    def update_config(self, params):\n'
+        '        for k, v in (params or {}).items():\n'
+        '            if hasattr(self, k):\n'
+        '                setattr(self, k, v)\n'
+        '        return {"success": True}\n\n'
+        '    # ---- 窗口查询: 浮窗定位需要, 真实现(纯查询, 无付费逻辑) ----\n'
+        '    def get_game_hwnd(self) -> int:\n'
+        '        hwnd = user32.GetForegroundWindow()\n'
+        '        if hwnd:\n'
+        '            length = user32.GetWindowTextLengthW(hwnd)\n'
+        '            if length > 0:\n'
+        '                buf = ctypes.create_unicode_buffer(length + 1)\n'
+        '                user32.GetWindowTextW(hwnd, buf, length + 1)\n'
+        '                if self.TARGET_WINDOW_TITLE in buf.value:\n'
+        '                    return hwnd\n'
+        '        hwnd = user32.FindWindowW(self.TARGET_WINDOW_CLASS, None)\n'
+        '        if hwnd:\n'
+        '            return hwnd\n'
+        '        return user32.FindWindowW(None, self.TARGET_WINDOW_TITLE) or 0\n\n'
+        '    def is_game_window_active(self) -> bool:\n'
+        '        hwnd = user32.GetForegroundWindow()\n'
+        '        if not hwnd:\n'
+        '            return False\n'
+        '        length = user32.GetWindowTextLengthW(hwnd)\n'
+        '        if length <= 0:\n'
+        '            return False\n'
+        '        buf = ctypes.create_unicode_buffer(length + 1)\n'
+        '        user32.GetWindowTextW(hwnd, buf, length + 1)\n'
+        '        return self.TARGET_WINDOW_TITLE in buf.value\n'
+    ),
+    "src/states/battle_engine.py": (
+        '"""[Free 构建存根] 挂机引擎(自动战斗)为 Pro 功能: 引擎本体不入免费树。"""\n\n\n'
+        'class BattleEngine:\n'
+        '    def __init__(self, frame_provider=None, on_log=None, dry_run=False):\n'
+        '        self._frame_provider = frame_provider\n'
+        '        self._on_log = on_log or (lambda *a, **k: None)\n'
+        '        self.running = False\n'
+        '        self.dry_run = dry_run\n'
+        '        self.state = "stopped"\n'
+        '        self.state_detail = ""\n'
+        '        self._stop_all_cb = None\n'
+        '        self.battles_done = 0\n'
+        '        self.catch_attempts = 0\n'
+        '        self.shiny_count = 0\n'
+        '        self.balls_used_total = 0\n'
+        '        self.catches = 0\n\n'
+        '    def start(self, overrides=None):\n'
+        '        self._on_log("挂机引擎为付费版功能, 请开通会员", "warning")\n'
+        '        return False\n\n'
+        '    def stop(self, reason="手动停止"):\n'
+        '        self.running = False\n'
+        '        self.state = "stopped"\n\n'
+        '    def get_status(self):\n'
+        '        return {"running": self.running, "dry_run": self.dry_run,\n'
+        '                "state": self.state, "detail": self.state_detail,\n'
+        '                "battles_done": self.battles_done, "catch_attempts": self.catch_attempts,\n'
+        '                "shiny_count": self.shiny_count, "balls_used_total": self.balls_used_total,\n'
+        '                "catches": self.catches, "skills_used": 0, "catch_hp": 0,\n'
+        '                "enemy_name": "", "enemy_hp": 0, "shiny_alert": None}\n'
     ),
     # 免费树 src/pvp 用主仓真 __init__(re-export 的模块全部随 src/pvp 整体带入), 无需存根
 }
