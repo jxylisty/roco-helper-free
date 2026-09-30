@@ -29,3 +29,7 @@ _probe_out*/
 # 同步脚本工作产物
 _plan_free.txt
 _preview_free/
+# sync_free.py 实际产物（dist/ 规则不覆盖 dist_free）
+dist_free/
+_sync_log.txt
+tools/_import_report.txt
