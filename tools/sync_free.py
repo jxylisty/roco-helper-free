@@ -234,7 +234,11 @@ def _excluded(rel: Path) -> bool:
     """排除判定: 简单名按路径段匹配, 带斜杠的按 POSIX 前缀匹配"""
     posix = rel.as_posix()
     for d in EXCLUDE_DIRS:
-        if "/" in d:
+        if d.endswith("/"):
+            # 根级目录前缀（如 "server/" 只排顶层 server, 不伤 src/server）
+            if posix.startswith(d):
+                return True
+        elif "/" in d:
             if posix == d or posix.startswith(d + "/"):
                 return True
         elif d in rel.parts:
