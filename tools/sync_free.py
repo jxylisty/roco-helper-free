@@ -169,8 +169,8 @@ SOURCE_PATCHES = [
      "默认 active 页置为 pvp"),
     ("src/gui/web/index.html",
      '<button class="nav-item active" data-page="auto" onclick="switchPage(\'throw\')">',
-     '<button class="nav-item" data-page="auto" onclick="switchPage(\'throw\')">  <!-- [FREE BUILD] -->',
-     "默认导航高亮摘除(auto)"),
+     '<button class="nav-item" data-page="auto" onclick="switchPage(\'auto\')">  <!-- [FREE BUILD] alias fix + nav freedom -->',
+     "默认导航高亮摘除(auto) + onclick 修复(throw→auto)"),
     ("src/gui/web/index.html",
      '<button class="nav-item" data-page="pvp" onclick="switchPage(\'pvp\')">',
      '<button class="nav-item active" data-page="pvp" onclick="switchPage(\'pvp\')">',
@@ -440,10 +440,15 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
     }
     window.showProModal = showProModal;
     // 拦截 switchPage: 付费页不进入, 弹引导
+    // MERGED_PAGE_MAP 是 app.js 内部 const, 不在 window 上, 这里硬编码别名:
+    // throw/engine → auto (丢球助手), mcp/aivision/aibuddy → aipvp (AI对战)
     if (typeof window.switchPage === 'function') {
         var _sw = window.switchPage;
         window.switchPage = function (name) {
-            if (PAID_PAGES[name]) { showProModal(PAID_PAGES[name]); return; }
+            var n = name;
+            if (n === 'throw' || n === 'engine') n = 'auto';
+            if (n === 'mcp' || n === 'aivision' || n === 'aibuddy') n = 'aipvp';
+            if (PAID_PAGES[n]) { showProModal(PAID_PAGES[n]); return; }
             return _sw.apply(this, arguments);
         };
     }
