@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+.venv/
+venv/
+
+# 构建产物与运行数据（绝不入库）
+build/
+dist/
+data/
+keys*.json
+*.log
+*.bak
+
+# sync_free.py 工作产物
+_plan_free.txt
+_preview_free/
+
+# 抓包/探针产物（绝不入库）
+*.pcap
+_probe_out*/
+
+# IDE
+.vscode/
+.idea/
+
+# 同步脚本工作产物
+_plan_free.txt
+_preview_free/
