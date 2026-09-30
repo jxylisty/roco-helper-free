@@ -209,6 +209,10 @@ SOURCE_PATCHES = [
      '<select id="pvpSourceSelect" class="form-select" style="width:auto;display:none"',
      "隐藏数据源选择框"),
     ("src/gui/web/index.html",
+     '<div class="splash-title">洛克王国 · PVP 助手</div>',
+     '<div class="splash-title">洛克小助手</div>',
+     "splash 品牌名"),
+    ("src/gui/web/index.html",
      'id="collectorBar" style="margin-bottom:14px"',
      'id="collectorBar" style="margin-bottom:14px;display:none"',
      "隐藏数据采集条(开发者工具)"),
@@ -675,7 +679,14 @@ def main() -> None:
         return
 
     if out_root.exists():
-        shutil.rmtree(out_root)
+        # 保留 Tauri 编译缓存: target 目录移出 → 重建树 → 移回,
+        # 之后改前端只影响 HTML/JS, cargo 增量编译秒级完成
+        target_dir = out_root / "src-tauri" / "target"
+        keep_dir = out_root.parent / (out_root.name + "_target_keep")
+        if target_dir.exists():
+            shutil.rmtree(keep_dir, ignore_errors=True)
+            shutil.move(str(target_dir), str(keep_dir))
+        shutil.rmtree(out_root, ignore_errors=True)
     for rel, src in iter_source_files(main_root):
         dst = out_root / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -713,6 +724,13 @@ def main() -> None:
             raise SystemExit("[sync_free] app.js 锚点失效: NAV_PAID_PAGES 未命中, 请核对主仓改动")
 
     # 免费版已删除页面的前端 section/资源保留无妨(导航已拦), 但 pve 数据层不入树已由排除清单保证
+
+    # 归还 Tauri 编译缓存(见 main() 开头的移出逻辑)
+    keep_dir = out_root.parent / (out_root.name + "_target_keep")
+    if keep_dir.exists():
+        (out_root / "src-tauri").mkdir(parents=True, exist_ok=True)
+        shutil.move(str(keep_dir), str(out_root / "src-tauri" / "target"))
+        print("[sync_free] Tauri 编译缓存已保留(增量编译)")
 
     marker = out_root / "FREE_BUILD"
     marker.write_text(
