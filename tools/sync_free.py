@@ -464,6 +464,9 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                 s.className = 'nav-pro'; s.textContent = 'PRO';
                 b.appendChild(s);
             }
+            // DOM 级 onclick 覆写: 把 label 存 data 属性绕过引号问题
+            b.setAttribute('data-pro-label', PAID_PAGES[p]);
+            b.setAttribute('onclick', "var l=this.getAttribute('data-pro-label');window.showProModal&&showProModal(l)");
             nav.appendChild(b);   // 沉底
         });
         // 隐藏已删除页面的导航残留(理论上下游 CSS 已无, 兜底)
@@ -494,6 +497,9 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
     } else {
         freeNav();
     }
+    // WebView2 二次锁: pywebviewready 链路可能在 DOMContentLoaded 之后复位导航,
+    // 延迟一口确保 onclick 覆写不被任何异步初始化覆盖
+    setTimeout(freeNav, 600);
     // 头像点击: 免费版已验证则提示, 未验证弹入群验证
     window.authClick = function () {
         if (window.showProModal) showProModal('会员开通');
