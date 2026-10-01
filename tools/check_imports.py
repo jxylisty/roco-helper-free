@@ -20,14 +20,17 @@ MAIN = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(r"D:\洛克王国ai\lkwg
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(__file__).parent / "_import_report.txt"
 
 # 被排除(或将以存根形式存在)的模块前缀
+# v0.4 拆分线: src.pvp / src.capture / bridge_pvp* / bridge_daily / server services
+# 均已转免费整体带入, 不再算排除项; 真正缺席的只有付费执行层与授权体系。
 EXCLUDED_PREFIXES = (
-    "src.pvp", "src.capture",
-    "src.gui.auth", "src.gui.bridge_pvp", "src.gui.bridge_daily",
-    "src.gui.bridge_pvp_data", "auth_core",
-    "src.server.services.pvp_service", "src.server.services.daily_service",
+    "src.gui.auth", "auth_core",
+    "src.driver.human_input",
+    "src.perception.bag_scanner", "src.perception.ball_watcher",
+    "src.gui.ai_autopilot",
+    "src.tasks",
 )
 # from src.gui import XXX 形式需要单独核对的模块名
-GUI_NAMES = {"auth", "bridge_pvp", "bridge_daily", "bridge_pvp_data", "bridge_auth"}
+GUI_NAMES = {"auth", "ai_autopilot"}
 
 
 def imported_excluded(node: ast.AST):

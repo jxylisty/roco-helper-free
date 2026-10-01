@@ -44,6 +44,7 @@ EXCLUDE_DIRS = [
     "src-tauri/target", "src-tauri/gen",
     "tools",             # 主仓 tools = 构建链/调试脚本/抓包工具(免费仓有自己的 tools)
     "scripts",
+    "archive",           # 主仓历史归档(旧 pywebview 壳等, 顶层 import 已删模块)
 ]
 
 # 文件级排除（相对主仓根的 POSIX 路径）
@@ -477,6 +478,56 @@ STUBS = {
     # 免费树 src/pvp 用主仓真 __init__(re-export 的模块全部随 src/pvp 整体带入), 无需存根
 }
 
+# ---------------- 免费专属模块注入 ----------------
+# 免费版独立增值功能(主仓没有): 文件从 tools/free_inject/ 原样拷入免费树,
+# 接线补丁在 FREE_INJECT_PATCHES。远行商人 = 免费专属(2026-10-01)。
+FREE_INJECT_ROOT = Path(__file__).resolve().parent / "free_inject"
+
+# 注入文件的树内落点(相对主仓根): free_inject 下的相对路径 = 免费树相对路径
+INJECT_FILES = [
+    "src/gui/bridge_merchant.py",
+    "src/gui/web/assets/merchant.js",
+    "src/gui/web/assets/merchant.css",
+]
+
+# 免费专属模块的接线补丁: 语义同 SOURCE_PATCHES, 但锚点失效时按"已注入"幂等跳过
+FREE_INJECT_PATCHES = [
+    # 1) AppBridge 挂 Mixin
+    ("src/gui/bridge.py",
+     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n):",
+     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [FREE BUILD] 远行商人(免费专属)\n):",
+     "AppBridge 挂 MerchantMixin"),
+    ("src/gui/bridge.py",
+     "from src.gui.bridge_tools import ToolsMixin",
+     "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [FREE BUILD]",
+     "import MerchantMixin"),
+    # 2) Mixin.__init__ 由 AppBridge.__init__ 尾部调用(self.merchant_init())
+    ("src/gui/bridge.py",
+     "        self._load_throw_config()",
+     "        self._load_throw_config()\n        # [FREE BUILD] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass",
+     "AppBridge.__init__ 调 merchant_init"),
+    # 3) 导航: 图鉴按钮前插入远行商人按钮
+    ("src/gui/web/index.html",
+     '<button class="nav-item" data-page="pokedex" onclick="switchPage(\'pokedex\')">',
+     '<button class="nav-item" data-page="merchant" onclick="switchPage(\'merchant\')"><span class="nav-idx">00</span><img src="assets/img/game_icons/white_64/sys_search_pet.png" class="nav-ico-mini" alt="">远行商人</button>\n            ' + '<button class="nav-item" data-page="pokedex" onclick="switchPage(\'pokedex\')">',
+     "导航插入远行商人按钮"),
+    # 4) 页面 section: 配置中心 section 前插入远行商人页
+    ("src/gui/web/index.html",
+     '        <!-- ===== 页面: 配置中心 ===== -->\n        <section class="page" id="page-config">',
+     "        <!-- ===== 页面: 远行商人 (免费专属) ===== -->\n        <section class=\"page\" id=\"page-merchant\">\n            <div class=\"page-head\">\n                <div>\n                    <h2>远行商人</h2>\n                    <p>每日四时段货单速查 · 网络数据聚合, 以游戏内为准</p>\n                </div>\n                <button class=\"tbtn\" onclick=\"merchantLoad(true)\" title=\"强制刷新货单\">刷新货单</button>\n            </div>\n            <div class=\"pdx-toolbar\">\n                <span class=\"card-sub\" id=\"mctSummary\">· 未加载</span>\n            </div>\n            <div class=\"mct-slotbar page-tab-bar\" id=\"mctSlotBar\"></div>\n            <div class=\"mct-grid\" id=\"mctGrid\"><div class=\"bag-empty\">加载中…</div></div>\n        </section>\n\n        <!-- ===== 页面: 配置中心 ===== -->\n        <section class=\"page\" id=\"page-config\">",
+     "插入远行商人页面 section"),
+    # 5) 资源引入: merchant.css + merchant.js
+    ("src/gui/web/index.html",
+     '<script src="assets/pokedex.js"></script>',
+     '<link rel="stylesheet" href="assets/merchant.css">\n<script src="assets/pokedex.js"></script>\n<script src="assets/merchant.js"></script>',
+     "引入 merchant.css/merchant.js"),
+    # 6) switchPage 懒加载钩子
+    ("src/gui/web/assets/app.js",
+     "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }",
+     "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }\n    // [FREE BUILD] 远行商人页懒加载\n    if (name === 'merchant' && typeof window.merchantPageInit === 'function') {\n        setTimeout(window.merchantPageInit, 30);\n    }",
+     "switchPage 懒加载远行商人页"),
+]
+
 # ---------------- 免费版前端补丁 ----------------
 # index.html: <title> 定名 + </body> 前 FREE_BUILD 脚本(付费页拦截 + 会员引导弹窗)
 # app.js: NAV_PAID_PAGES 从 ['pvp','aipvp','daily'] 改为 ['auto','aipvp','daily']
@@ -667,6 +718,35 @@ def apply_source_patches(main_root: Path, out_root: Path) -> None:
         print(f"[sync_free] 补丁 OK: {why} ({rel}, x{n})")
 
 
+def apply_inject_files(out_root: Path) -> None:
+    """把 tools/free_inject/ 下的免费专属文件拷入免费树"""
+    for rel in INJECT_FILES:
+        src = FREE_INJECT_ROOT / rel
+        dst = out_root / rel
+        if not src.exists():
+            raise SystemExit(f"[sync_free] 注入源文件缺失: {src}")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        print(f"[sync_free] 注入 OK: {rel}")
+
+
+def apply_inject_patches(out_root: Path) -> None:
+    """免费专属模块的接线补丁(幂等同 SOURCE_PATCHES, 作用于注入文件拷入之后)"""
+    for rel, old, new, why in FREE_INJECT_PATCHES:
+        dst = out_root / rel
+        if not dst.exists():
+            raise SystemExit(f"[sync_free] 注入补丁目标不存在({why}): {rel}")
+        text = dst.read_text(encoding="utf-8")
+        n = text.count(old)
+        if n < 1:
+            if new in text:
+                print(f"[sync_free] 注入补丁跳过(已应用): {why} ({rel})")
+                continue
+            raise SystemExit(f"[sync_free] 注入补丁锚点失效({why}): {rel} 命中 0 次, 请核对主仓改动")
+        dst.write_text(text.replace(old, new), encoding="utf-8")
+        print(f"[sync_free] 注入补丁 OK: {why} ({rel}, x{n})")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="从主仓生成免费版代码树")
     ap.add_argument("--main", required=True, help="主仓根目录")
@@ -681,13 +761,14 @@ def main() -> None:
 
     copied = [rel for rel, _ in iter_source_files(main_root)]
     stubs = dict(STUBS)
-    all_items = copied + [Path(r) for r in stubs]
+    all_items = copied + [Path(r) for r in stubs] + [Path(r) for r in INJECT_FILES]
 
-    print(f"[sync_free] 计划: 拷贝 {len(copied)} 个文件 + {len(stubs)} 个存根 + {len(SOURCE_PATCHES)} 个补丁")
+    print(f"[sync_free] 计划: 拷贝 {len(copied)} 个文件 + {len(stubs)} 个存根 + {len(INJECT_FILES)} 个注入 + {len(SOURCE_PATCHES)} 个补丁")
     if args.dry_run:
         for rel in sorted(all_items, key=lambda p: p.as_posix()):
-            tag = "STUB" if rel.as_posix() in stubs else "COPY"
-            print(f"  {tag} {rel.as_posix()}")
+            r = rel.as_posix()
+            tag = "STUB" if r in stubs else ("INJECT" if r in INJECT_FILES else "COPY")
+            print(f"  {tag} {r}")
         return
 
     if out_root.exists():
@@ -707,6 +788,11 @@ def main() -> None:
         dst = out_root / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(content, encoding="utf-8")
+
+    # 免费专属模块: 文件注入 + 接线补丁(必须先于 SOURCE_PATCHES 前端补丁? 否,
+    # 两者锚点互不重叠, 先注入后接线即可)
+    apply_inject_files(out_root)
+    apply_inject_patches(out_root)
 
     apply_source_patches(main_root, out_root)
 
