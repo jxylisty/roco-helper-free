@@ -491,6 +491,8 @@ INJECT_FILES = [
 ]
 
 # 免费专属模块的接线补丁: 语义同 SOURCE_PATCHES, 但锚点失效时按"已注入"幂等跳过
+# 2026-10-01 工具箱页签化后, 前端接线(index.html 页签/app.js 路由)已收进主仓原生代码,
+# 不再需要注入补丁; bridge.py 三处保留(幂等, 主仓文件可能被还原后重接)。
 FREE_INJECT_PATCHES = [
     # 1) AppBridge 挂 Mixin
     ("src/gui/bridge.py",
@@ -501,31 +503,10 @@ FREE_INJECT_PATCHES = [
      "from src.gui.bridge_tools import ToolsMixin",
      "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [MERCHANT]",
      "import MerchantMixin"),
-    # 2) Mixin.__init__ 由 AppBridge.__init__ 尾部调用(self.merchant_init())
     ("src/gui/bridge.py",
      "        self._load_throw_config()",
      "        self._load_throw_config()\n        # [MERCHANT] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass",
      "AppBridge.__init__ 调 merchant_init"),
-    # 3) 导航: 图鉴按钮前插入远行商人按钮
-    ("src/gui/web/index.html",
-     '<button class="nav-item" data-page="pokedex" onclick="switchPage(\'pokedex\')">',
-     '<button class="nav-item" data-page="merchant" onclick="switchPage(\'merchant\')"><span class="nav-idx">00</span><img src="assets/img/game_icons/white_64/sys_search_pet.png" class="nav-ico-mini" alt="">远行商人</button>\n            ' + '<button class="nav-item" data-page="pokedex" onclick="switchPage(\'pokedex\')">',
-     "导航插入远行商人按钮"),
-    # 4) 页面 section: 配置中心 section 前插入远行商人页
-    ("src/gui/web/index.html",
-     '        <!-- ===== 页面: 配置中心 ===== -->\n        <section class="page" id="page-config">',
-     "        <!-- ===== 页面: 远行商人 (免费专属) ===== -->\n        <section class=\"page\" id=\"page-merchant\">\n            <div class=\"page-head\">\n                <div>\n                    <h2>远行商人</h2>\n                    <p>每日四时段货单速查 · 网络数据聚合, 以游戏内为准</p>\n                </div>\n                <button class=\"tbtn\" onclick=\"merchantLoad(true)\" title=\"强制刷新货单\">刷新货单</button>\n            </div>\n            <div class=\"pdx-toolbar\">\n                <span class=\"card-sub\" id=\"mctSummary\">· 未加载</span>\n            </div>\n            <div class=\"mct-slotbar page-tab-bar\" id=\"mctSlotBar\"></div>\n            <div class=\"mct-grid\" id=\"mctGrid\"><div class=\"bag-empty\">加载中…</div></div>\n        </section>\n\n        <!-- ===== 页面: 配置中心 ===== -->\n        <section class=\"page\" id=\"page-config\">",
-     "插入远行商人页面 section"),
-    # 5) 资源引入: merchant.css + merchant.js
-    ("src/gui/web/index.html",
-     '<script src="assets/pokedex.js"></script>',
-     '<link rel="stylesheet" href="assets/merchant.css">\n<script src="assets/pokedex.js"></script>\n<script src="assets/merchant.js"></script>',
-     "引入 merchant.css/merchant.js"),
-    # 6) switchPage 懒加载钩子
-    ("src/gui/web/assets/app.js",
-     "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }",
-     "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }\n    // [MERCHANT] 远行商人页懒加载\n    if (name === 'merchant' && typeof window.merchantPageInit === 'function') {\n        setTimeout(window.merchantPageInit, 30);\n    }",
-     "switchPage 懒加载远行商人页"),
 ]
 
 # ---------------- 免费版前端补丁 ----------------
@@ -598,7 +579,8 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
             nav.appendChild(b);   // 沉底
         });
         // 隐藏已删除页面的导航残留(理论上下游 CSS 已无, 兜底)
-        ['vision', 'tools', 'bag', 'config'].forEach(function (p) {
+        // 注: tools(工具箱)不在删除清单 — 图鉴/远行商人收进工具箱页签后它是免费功能载体
+        ['vision', 'bag', 'config'].forEach(function (p) {
             var b = nav.querySelector('.nav-item[data-page="' + p + '"]');
             if (b) b.style.display = 'none';
         });
