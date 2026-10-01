@@ -495,16 +495,16 @@ FREE_INJECT_PATCHES = [
     # 1) AppBridge 挂 Mixin
     ("src/gui/bridge.py",
      "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n):",
-     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [FREE BUILD] 远行商人(免费专属)\n):",
+     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n):",
      "AppBridge 挂 MerchantMixin"),
     ("src/gui/bridge.py",
      "from src.gui.bridge_tools import ToolsMixin",
-     "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [FREE BUILD]",
+     "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [MERCHANT]",
      "import MerchantMixin"),
     # 2) Mixin.__init__ 由 AppBridge.__init__ 尾部调用(self.merchant_init())
     ("src/gui/bridge.py",
      "        self._load_throw_config()",
-     "        self._load_throw_config()\n        # [FREE BUILD] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass",
+     "        self._load_throw_config()\n        # [MERCHANT] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass",
      "AppBridge.__init__ 调 merchant_init"),
     # 3) 导航: 图鉴按钮前插入远行商人按钮
     ("src/gui/web/index.html",
@@ -524,7 +524,7 @@ FREE_INJECT_PATCHES = [
     # 6) switchPage 懒加载钩子
     ("src/gui/web/assets/app.js",
      "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }",
-     "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }\n    // [FREE BUILD] 远行商人页懒加载\n    if (name === 'merchant' && typeof window.merchantPageInit === 'function') {\n        setTimeout(window.merchantPageInit, 30);\n    }",
+     "    // 图鉴页懒加载(首次进入拉全量数据)\n    if (name === 'pokedex' && typeof window.pokedexPageInit === 'function') {\n        setTimeout(window.pokedexPageInit, 30);\n    }\n    // [MERCHANT] 远行商人页懒加载\n    if (name === 'merchant' && typeof window.merchantPageInit === 'function') {\n        setTimeout(window.merchantPageInit, 30);\n    }",
      "switchPage 懒加载远行商人页"),
 ]
 
