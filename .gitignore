@@ -35,3 +35,8 @@ _sync_log.txt
 tools/_import_report.txt
 # 本地测试产物(playwright 截图等, 对齐主仓 tools/output 惯例)
 tools/output/
+
+# 商人数据源接口保护: 实体文件本地保留(free_inject), 永不入库(防倒卖/防上游防控)
+tools/free_inject/src/gui/bridge_merchant.py
+tools/free_inject/src/gui/web/assets/merchant.js
+tools/free_inject/src/gui/web/assets/merchant.css
