@@ -17,8 +17,18 @@
 本脚本与产出树永不包含密钥、抓包与授权核心逻辑（见 docs/功能拆分.md）。
 """
 import argparse
+import fnmatch
 import shutil
+import sys
 from pathlib import Path
+
+# Windows 控制台编码保护, 避免遇到非 GBK 字符（如零宽空格等）时抛 UnicodeEncodeError
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # 免费版会员引导 QQ（小鲸鱼）
 FREE_QQ = "3808239548"
@@ -27,14 +37,14 @@ FREE_QQ = "3808239548"
 # 目录级排除（相对主仓根）:
 #   以 "/" 结尾 = 根级目录前缀（只排顶层, 不伤子目录同名）
 #   带斜杠     = POSIX 前缀（相对主仓根）
-#   简单名     = 任意层级路径段命中即排除
+#   简单名/通配 = 路径段命中或 fnmatch 命中即排除
 EXCLUDE_DIRS = [
     "server/",           # 顶层授权服务端（worker.js 等; src/server 是 FastAPI 本体, 保留）
     "src/tasks/",        # 日常任务执行器（付费, 执行器整体不入树）
     "src/gui/studio/",   # 视觉工坊独立前端（开发者）
     "build", "dist",     # 构建产物
     ".git", "__pycache__", ".vscode", ".idea", ".zcode",
-    ".venv", "venv",               # 虚拟环境
+    ".venv*", "venv*",   # 虚拟环境 (含 .venv, .venv-build 等)
     ".pytest_cache", ".ruff_cache", ".mypy_cache", "htmlcov",
     "node_modules", ".github",
     "data/",             # 根级运行数据（历史库/截图/抓包缓存）; 注意 src/pvp/data 是竞技数据, 不匹配
@@ -47,11 +57,13 @@ EXCLUDE_DIRS = [
     "archive",           # 主仓历史归档(旧 pywebview 壳等, 顶层 import 已删模块)
 ]
 
-# 文件级排除（相对主仓根的 POSIX 路径）
+# 文件级排除（相对主仓根的 POSIX 路径或通配符）
 # 付费自动化「物理抽壳」: 丢球工具/挂机引擎本体由 STUBS 顶替(属性面兼容),
 # 拟人按键层/AI 接管/背包 OCR 整文件不进树 —— 改闸门也变不出执行代码。
 EXCLUDE_FILES = [
-    # 根目录调试残留
+    # 根目录调试与运行残留
+    "*.log",
+    "probe_*.log",
     "_exp_battle_events.json",
     "_shiny_exp_events.json",
     "_shiny_pair.json",
@@ -637,8 +649,43 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
 </script>"""
 
 
+FREE_DIST_README = """# 洛克小助手 · Free（桌面端）
+
+洛克王国桌面辅助工具 · 免费版。Tauri 2 (Rust) 桌面端 + FastAPI 后端解耦架构。
+
+## 免费版功能清单
+
+- ⚔️ **PVP 实时识别 & AI 军师**：实时推演与战况雷达 HUD 浮窗、双方阵容顶栏、属性克制即时计算、本机战报。
+- 🤖 **AI 智能助手**：支持填入自定义 API Key（DeepSeek/智谱/OpenAI 等），密钥仅保存在本机。
+- 🛒 **远行商人**：每日四时段货单聚合速查与倒计时、本机货单历史（免费版专属）。
+- 🧰 **实用小工具箱**：
+  - 精灵图鉴（全量 685+ 精灵 Wiki 资料与技能速查）
+  - 属性克制计算器（18 系双克/双抗多倍率计算）
+  - 蛋组查询（孵蛋配种互查）
+  - 异色概率计算器（7 大渠道官方概率估算）
+  - 异色摆窝规划器（背包库存导入与最优配对摆放求解）
+
+> 💡 **提示**：丢球助手、挂机引擎、日常任务一键托管、AI 对战自动驾驶接管为 Pro 会员版专属功能。
+> 免费版中自动化执行层物理抽壳，不包含按键驱动与敏感自动化代码。
+
+## 启动方式
+
+- **桌面客户端（推荐）**：
+  直接双击运行 `src-tauri/target/debug/lkwg-pvp-assistant.exe`（自动拉起后台服务）。
+- **纯 Python 服务模式**：
+  ```bash
+  python server_main.py
+  ```
+  控制台服务默认运行在：`http://127.0.0.1:17366`
+
+## 版本更新与支持
+
+免费版更新请加入 QQ 群获取（群主 QQ: FREE_QQ_PLACEHOLDER）。
+"""
+
+
 def _excluded(rel: Path) -> bool:
-    """排除判定: 简单名按路径段匹配, 带斜杠按 POSIX 前缀, 根级(尾/)按顶层前缀"""
+    """排除判定: 简单名按路径段匹配, 带斜杠按 POSIX 前缀, 根级(尾/)按顶层前缀, 支持通配符"""
     posix = rel.as_posix()
     for d in EXCLUDE_DIRS:
         if d.endswith("/"):
@@ -647,9 +694,19 @@ def _excluded(rel: Path) -> bool:
         elif "/" in d:
             if posix == d or posix.startswith(d + "/"):
                 return True
+        elif any(c in d for c in "*?["):
+            for part in rel.parts:
+                if fnmatch.fnmatch(part, d):
+                    return True
         elif d in rel.parts:
             return True
-    return posix in EXCLUDE_FILES
+    for f in EXCLUDE_FILES:
+        if any(c in f for c in "*?["):
+            if fnmatch.fnmatch(posix, f) or fnmatch.fnmatch(rel.name, f):
+                return True
+        elif posix == f:
+            return True
+    return False
 
 
 def _force_included(rel: Path) -> bool:
@@ -816,6 +873,9 @@ def main() -> None:
     marker.write_text(
         "洛克小助手 Free 构建产物 — 更新通道: QQ 群获取\n",
         encoding="utf-8")
+    readme_free = out_root / "README.md"
+    readme_free.write_text(FREE_DIST_README.replace("FREE_QQ_PLACEHOLDER", FREE_QQ), encoding="utf-8")
+    print(f"[sync_free] 免费发布说明已写入: {readme_free}")
     print(f"[sync_free] 免费树已生成: {out_root}")
     print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
 
