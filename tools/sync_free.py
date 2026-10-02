@@ -356,7 +356,20 @@ STUBS = {
         '    from src.gui.bridge_common import CONFIG_DIR\n'
         '    return CONFIG_DIR / "free_auth.json"\n\n\n'
         'def _free_verified(qq: str = "") -> dict | None:\n'
-        '    """本地已验证状态(离线放行的唯一依据)。qq 非空时需匹配。"""\n'
+        '    """本地已验证状态(离线放行的唯一依据)。qq 非空时需匹配。\n'
+        '    7 天软过期: verified_at 超 7 天返回 None(口令在群公告定期轮换,\n'
+        '    提示重验; 期间抓包类功能闸住, 其余功能不受影响)。"""\n'
+        '    try:\n'
+        '        st = _json.loads(_free_token_file().read_text(encoding="utf-8"))\n'
+        '        if st.get("token") and (not qq or st.get("qq") == qq):\n'
+        '            if _time.time() - float(st.get("verified_at") or 0) > 7 * 86400:\n'
+        '                return None  # [FREE] 验证超 7 天 → 视为待重验\n'
+        '            return st\n'
+        '    except Exception:\n'
+        '        pass\n'
+        '    return None\n\n\n'
+        'def _free_verified_raw(qq: str = "") -> dict | None:\n'
+        '    """不检查 7 天的原始验证态(供前端判断"曾验证过→该重验了")。"""\n'
         '    try:\n'
         '        st = _json.loads(_free_token_file().read_text(encoding="utf-8"))\n'
         '        if st.get("token") and (not qq or st.get("qq") == qq):\n'
@@ -377,16 +390,21 @@ STUBS = {
         '        return {"ok": False, "free_verify_required": True, "free_build": True,\n'
         '                "message": "请先完成入群验证(QQ号+群口令), 验证免费"}\n\n'
         '    def free_verify_status(self) -> dict:\n'
-        '        """前端启动时轮询: 是否已通过入群验证。"""\n'
+        '        """前端启动时轮询: 是否已通过入群验证。\n'
+        '        verify_stale=True = 曾验证但超 7 天(前端提示重验, 不强制弹窗)。"""\n'
         '        st = _free_verified()\n'
+        '        stale = bool((not st) and _free_verified_raw())\n'
         '        return {"ok": True, "free_build": True, "verified": bool(st),\n'
+        '                "verify_stale": stale,\n'
         '                "qq": (st or {}).get("qq", ""),\n'
         '                "nickname": (st or {}).get("nickname", ""),\n'
         '                "hwid": get_hwid()}\n\n'
         '    def auth_status(self) -> dict:\n'
         '        verified = bool(_free_verified())\n'
+        '        stale = bool((not verified) and _free_verified_raw())\n'
         '        return {"ok": True, "authorized": False, "dev_mode": False,\n'
         '                "free_build": True, "pro_qq": FREE_QQ, "free_verified": verified,\n'
+        '                "free_verify_stale": stale,\n'
         '                "nickname": ("免费版" if not verified else\n'
         '                             "训练家_" + (_free_verified().get("qq", "")[-4:])),\n'
         '                "expires_at": 0}\n\n'
@@ -818,12 +836,20 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                 pywebview.api.free_verify_status().then(function (st) {
                     var ok = !!(st && st.verified);
                     window.FREE_VERIFIED = ok;
+                    window.FREE_VERIFY_STALE = !!(st && st.verify_stale);
                     if (window.freeApplyVerifyUI) freeApplyVerifyUI(ok);
                     if (!ok) {
                         var sub = document.getElementById('authState');
-                        if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
                         var box = document.getElementById('authAvatarBox');
-                        if (box) box.title = '点击完成入群验证(免费)';
+                        if (window.FREE_VERIFY_STALE) {
+                            // 超过 7 天: 温和提示重验(不强制弹窗, 其余功能不受影响)
+                            if (sub) sub.innerHTML = '<span class="auth-exp">验证已过期 · 点击重新验证</span>';
+                            if (box) box.title = '入群验证超 7 天, 点击重新验证(免费)';
+                            if (window.showToast) showToast('入群验证已超 7 天, 点左上角头像重新验证(群口令见群公告)', 'warning', 8000);
+                        } else {
+                            if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
+                            if (box) box.title = '点击完成入群验证(免费)';
+                        }
                     }
                 }).catch(function () {});
             } catch (e) { /* web 模式无 pywebview 桩时静默 */ }
@@ -833,7 +859,7 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
         // pywebview 桩就绪晚于 DOM 的场景再补一口
         window.addEventListener('pywebviewready', function () { setTimeout(ask, 200); });
     })();
-    // 免费版身份显示: 已验证显示昵称, 未验证引导验证(覆盖主仓 renderAuth 的未登录文案)
+    // 免费版身份显示: 已验证显示昵称, 未验证/过期引导验证(覆盖主仓 renderAuth 的未登录文案)
     if (typeof window.renderAuth === 'function') {
         var _ra = window.renderAuth;
         window.renderAuth = function () {
@@ -844,6 +870,9 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                 if (window.FREE_VERIFIED) {
                     if (sub) sub.innerHTML = '<span class="auth-exp">已验证 · 感谢支持正版</span>';
                     if (box) box.title = '已通过入群验证';
+                } else if (window.FREE_VERIFY_STALE) {
+                    if (sub) sub.innerHTML = '<span class="auth-exp">验证已过期 · 点击重新验证</span>';
+                    if (box) box.title = '入群验证超 7 天, 点击重新验证(免费)';
                 } else {
                     if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
                     if (box) box.title = '点击完成入群验证(免费)';
