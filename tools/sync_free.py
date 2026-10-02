@@ -119,12 +119,45 @@ SOURCE_PATCHES = [
      '    def toggle_skill(self) -> dict:\n        will_start = not self.tool.skill_running',
      '    def toggle_skill(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 自动技能为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.skill_running',
      "toggle_skill 补闸门"),
-    # 2b) PVP 识别引擎免费(AI 军师): 摘除 pvp_engine_start 的鉴权闸
+    # 2b) PVP 识别引擎免费(AI 军师): 摘除 pvp_engine_start 的鉴权闸,
+    #     换成入群验证闸(防倒卖: 抓包实现不提供给未验证用户)
     #     (锚点以 if self._pvp_running: 后缀区分 engine_start 的同款闸)
     ("src/gui/bridge_pvp.py",
      '        gate = self._auth_gate()\n        if gate:\n            return gate\n        if self._pvp_running:',
-     '        # [FREE BUILD] 识别引擎免费(AI 军师), 闸门只拦自动化入口\n        if self._pvp_running:',
-     "pvp_engine_start 摘闸(免费识别)"),
+     '        # [FREE BUILD] 识别引擎免费但需入群验证(防倒卖硬闸, 前端 pvp 页同步锁)\n'
+     '        gate = self._free_gate()\n'
+     '        if gate:\n'
+     '            return gate\n'
+     '        if self._pvp_running:',
+     "pvp_engine_start 摘鉴权闸换入群验证闸(免费识别)"),
+    # 2b-2) 抓包子系统启动硬闸: 有人在 RPC 层直接调 collector/capture 也要过验证
+    ("src/gui/bridge_pvp.py",
+     '    def pvp_collector_start(self) -> dict:',
+     '    def pvp_collector_start(self) -> dict:\n'
+     '        gate = self._free_gate()  # [FREE BUILD] 入群验证闸(防倒卖)\n'
+     '        if gate:\n'
+     '            return gate',
+     "pvp_collector_start 补入群验证闸"),
+    # 2b-3) 数据采集手动抓一帧同理
+    ("src/gui/bridge_pvp.py",
+     '    def pvp_collector_manual(self) -> dict:',
+     '    def pvp_collector_manual(self) -> dict:\n'
+     '        gate = self._free_gate()  # [FREE BUILD] 入群验证闸(防倒卖)\n'
+     '        if gate:\n'
+     '            return gate',
+     "pvp_collector_manual 补入群验证闸"),
+    # 2b-4) pvp.js: engine_start 被闸拒绝时(free_verify_required)弹验证引导而非无声失败
+    ("src/gui/web/assets/pvp.js",
+     '            const r = await pywebview.api.pvp_engine_start(src);\n'
+     '            if (r.success) {\n'
+     '                pvpEngineRunning = true;',
+     '            const r = await pywebview.api.pvp_engine_start(src);\n'
+     '            if (r && r.free_verify_required) {  // [FREE BUILD] 未验证 → 弹入群验证\n'
+     '                if (window.freeVerifyFlow) freeVerifyFlow();\n'
+     '                addLog(r.message || \'请先完成入群验证\', \'warning\');\n'
+     '            } else if (r.success) {\n'
+     '                pvpEngineRunning = true;',
+     "pvp.js 引擎启动失败弹验证引导"),
     # 2c) MCP 自玩按键注入补闸(pvp_act 无鉴权直通 human_input; human_input 已排除)
     ("src/gui/bridge_pvp_data.py",
      '    def pvp_act(self, action: str, delay: float = None) -> dict:\n        """执行一条 PVP 操作命令',
@@ -289,18 +322,74 @@ SOURCE_PATCHES = [
 # _auth_gate 返回 {"auth_required": True} → 前端 FREE_BUILD 补丁据道拦截并弹会员引导。
 STUBS = {
     "src/gui/bridge_auth.py": (
-        '"""[Free 构建存根] 免费版授权: 付费闸门统一指向会员引导, 无卡密体系。"""\n\n\n'
+        '"""[Free 构建存根] 免费版授权: 付费闸门统一指向会员引导 + 入群验证防倒卖。"""\n\n'
+        'import hashlib\n'
+        'import json as _json\n'
+        'import time as _time\n\n\n'
         f'FREE_QQ = "{FREE_QQ}"  # 会员购买引导(小鲸鱼)\n\n\n'
+        'def get_hwid() -> str:\n'
+        '    """机器码: MAC + 主机名 + Windows MachineGuid 的 SHA256(与 Pro 版 auth_core 同算法)。\n'
+        '    MachineGuid 重装系统才变; 改 MAC / 改主机名 / 虚拟机克隆都不能"换机"。任一因子缺失自动降级。"""\n'
+        '    import socket\n'
+        '    import uuid\n'
+        '    parts = []\n'
+        '    try:\n'
+        '        parts.append(str(uuid.getnode()))\n'
+        '    except Exception:\n'
+        '        pass\n'
+        '    try:\n'
+        '        parts.append(socket.gethostname())\n'
+        '    except Exception:\n'
+        '        pass\n'
+        '    try:\n'
+        '        import winreg\n'
+        '        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,\n'
+        '                            r"SOFTWARE\\Microsoft\\Cryptography", 0,\n'
+        '                            winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as k:\n'
+        '            parts.append(winreg.QueryValueEx(k, "MachineGuid")[0])\n'
+        '    except Exception:\n'
+        '        pass\n'
+        '    if not parts:  # 兜底: 理论不可达\n'
+        '        parts = ["lkw-free-fallback"]\n'
+        '    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]\n\n\n'
+        'def _free_token_file():\n'
+        '    from src.gui.bridge_common import CONFIG_DIR\n'
+        '    return CONFIG_DIR / "free_auth.json"\n\n\n'
+        'def _free_verified(qq: str = "") -> dict | None:\n'
+        '    """本地已验证状态(离线放行的唯一依据)。qq 非空时需匹配。"""\n'
+        '    try:\n'
+        '        st = _json.loads(_free_token_file().read_text(encoding="utf-8"))\n'
+        '        if st.get("token") and (not qq or st.get("qq") == qq):\n'
+        '            return st\n'
+        '    except Exception:\n'
+        '        pass\n'
+        '    return None\n\n\n'
         'class AuthUpdateMixin:\n'
         '    """Free 构建授权存根: 闸门=会员引导, 账号接口=免费版提示。"""\n\n'
         '    def _auth_gate(self) -> dict | None:\n'
         '        """付费功能硬闸: 全部拒绝并引导开通会员(前端据此弹引导页)。"""\n'
         '        return {"ok": False, "auth_required": True, "free_build": True,\n'
         '                "message": "该功能为付费版功能, 请开通会员", "pro_qq": FREE_QQ}\n\n'
+        '    def _free_gate(self) -> dict | None:\n'
+        '        """抓包类功能硬闸: 未完成入群验证则拒绝(PVP 识别页前端同步锁)。"""\n'
+        '        if _free_verified():\n'
+        '            return None\n'
+        '        return {"ok": False, "free_verify_required": True, "free_build": True,\n'
+        '                "message": "请先完成入群验证(QQ号+群口令), 验证免费"}\n\n'
+        '    def free_verify_status(self) -> dict:\n'
+        '        """前端启动时轮询: 是否已通过入群验证。"""\n'
+        '        st = _free_verified()\n'
+        '        return {"ok": True, "free_build": True, "verified": bool(st),\n'
+        '                "qq": (st or {}).get("qq", ""),\n'
+        '                "nickname": (st or {}).get("nickname", ""),\n'
+        '                "hwid": get_hwid()}\n\n'
         '    def auth_status(self) -> dict:\n'
+        '        verified = bool(_free_verified())\n'
         '        return {"ok": True, "authorized": False, "dev_mode": False,\n'
-        '                "free_build": True, "pro_qq": FREE_QQ,\n'
-        '                "nickname": "免费版", "expires_at": 0}\n\n'
+        '                "free_build": True, "pro_qq": FREE_QQ, "free_verified": verified,\n'
+        '                "nickname": ("免费版" if not verified else\n'
+        '                             "训练家_" + (_free_verified().get("qq", "")[-4:])),\n'
+        '                "expires_at": 0}\n\n'
         '    def auth_activate(self, *a, **k):\n'
         '        return {"ok": False, "free_build": True,\n'
         '                "message": f"免费版无卡密体系, 开通会员请联系 QQ: {FREE_QQ}"}\n\n'
@@ -335,35 +424,38 @@ STUBS = {
         '        return {"ok": False, "free_build": True, "message": "免费版无需重置"}\n\n'
         '    def free_verify_group(self, qq="", group_key="", hwid=""):\n'
         '        """免费版入群验证: QQ号+群口令 → worker /free/verify 校验。\n'
-        '        hwid 由前端取机器指纹; token 落地 data/config/free_auth.json 后离线放行。"""\n'
-        '        import json as _json\n'
+        '        hwid 一律由后端生成(前端传入值不信任), token 落地 data/config/free_auth.json\n'
+        '        后离线放行; 机器码绑定防一码多机。"""\n'
         '        import urllib.request as _ur\n'
-        '        cfg_dir = __import__("src.gui.bridge_common", fromlist=["CONFIG_DIR"]).CONFIG_DIR\n'
-        '        token_file = cfg_dir / "free_auth.json"\n'
-        '        if token_file.exists():\n'
-        '            try:\n'
-        '                st = _json.loads(token_file.read_text(encoding="utf-8"))\n'
-        '                if st.get("token") and st.get("qq") == qq:\n'
-        '                    return {"ok": True, "verified": True, "nickname": st.get("nickname", ""),\n'
-        '                            "message": "本机已验证"}\n'
-        '            except Exception:\n'
-        '                pass\n'
-        '        if not (qq and group_key and hwid):\n'
+        '        token_file = _free_token_file()\n'
+        '        st = _free_verified(qq=str(qq or ""))\n'
+        '        if st:\n'
+        '            return {"ok": True, "verified": True, "nickname": st.get("nickname", ""),\n'
+        '                    "message": "本机已验证"}\n'
+        '        qq = str(qq or "").strip()\n'
+        '        group_key = str(group_key or "").strip()\n'
+        '        if not (qq and group_key):\n'
         '            return {"ok": False, "verified": False, "message": "请填写 QQ 号和群口令"}\n'
         '        try:\n'
         '            req = _ur.Request(\n'
         '                "https://lucky-cell-cd0b.zzx051012-e82.workers.dev/free/verify",\n'
-        '                data=_json.dumps({"qq": qq, "group_key": group_key, "hwid": hwid}).encode(),\n'
+        '                data=_json.dumps({"qq": qq, "group_key": group_key,\n'
+        '                                  "hwid": get_hwid()}).encode(),\n'
         '                headers={"Content-Type": "application/json"})\n'
         '            with _ur.urlopen(req, timeout=15) as resp:\n'
         '                data = _json.loads(resp.read().decode("utf-8"))\n'
         '            if not data.get("ok"):\n'
         '                return {"ok": False, "verified": False, "message": data.get("message", "验证失败")}\n'
-        '            cfg_dir.mkdir(parents=True, exist_ok=True)\n'
+        '            token_file.parent.mkdir(parents=True, exist_ok=True)\n'
         '            token_file.write_text(_json.dumps(\n'
         '                {"qq": qq, "token": data.get("token", ""),\n'
-        '                 "nickname": data.get("nickname", ""), "verified_at": __import__("time").time()},\n'
+        '                 "nickname": data.get("nickname", ""),\n'
+        '                 "verified_at": _time.time()},\n'
         '                ensure_ascii=False), encoding="utf-8")\n'
+        '            try:\n'
+        '                self._enqueue_log("入群验证通过, 抓包识别功能已解锁", "success")\n'
+        '            except Exception:\n'
+        '                pass\n'
         '            return {"ok": True, "verified": True, "nickname": data.get("nickname", ""),\n'
         '                    "message": "验证通过, 感谢支持正版"}\n'
         '        except Exception as e:\n'
@@ -509,15 +601,27 @@ INJECT_FILES = [
 # 2026-10-02 新增鼠标连点器(bridge_clicker.py, 免费专属): 纯 SendInput 鼠标事件,
 # 与主仓付费自动化执行层(human_input/battle_engine)无任何代码关联。
 FREE_INJECT_PATCHES = [
-    # 1) AppBridge 挂 Mixin
+    # 1) AppBridge 挂 Mixin — 2026-10-02 起主仓已原生带 MerchantMixin(工具箱页签化同步),
+    #    免费版只需补 ClickerMixin; 锚点按"缺什么补什么"幂等处理:
+    #    - ClickerMixin import 缺失 → 补 import 行
+    #    - 类基类列表无 ClickerMixin → 在 MerchantMixin 行后补挂
+    #    (主仓若回退到无 Merchant 状态, 旧锚点逻辑由下方 2/3 号补丁兜底)
+    ("src/gui/bridge.py",
+     "from src.gui.bridge_tools import ToolsMixin",
+     "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_clicker import ClickerService as ClickerMixin  # [CLICKER]",
+     "import ClickerMixin(主仓原生 Merchant 时)"),
+    ("src/gui/bridge.py",
+     "    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n):",
+     "    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n    ClickerMixin,   # [CLICKER] 鼠标连点器(免费专属)\n):",
+     "AppBridge 挂 ClickerMixin(主仓原生 Merchant 时)"),
     ("src/gui/bridge.py",
      "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n):",
      "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n    ClickerMixin,   # [CLICKER] 鼠标连点器(免费专属)\n):",
-     "AppBridge 挂 MerchantMixin + ClickerMixin"),
+     "AppBridge 挂 MerchantMixin + ClickerMixin(主仓无 Merchant 回退锚点)"),
     ("src/gui/bridge.py",
      "from src.gui.bridge_tools import ToolsMixin",
      "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [MERCHANT]\nfrom src.gui.bridge_clicker import ClickerService as ClickerMixin  # [CLICKER]",
-     "import MerchantMixin + ClickerMixin"),
+     "import MerchantMixin + ClickerMixin(主仓无 Merchant 回退锚点)"),
     ("src/gui/bridge.py",
      "        self._load_throw_config()",
      "        self._load_throw_config()\n        # [MERCHANT] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass\n        # [CLICKER] 连点器服务(免费专属): 热键注册失败不影响主功能\n        try:\n            from src.gui.bridge_clicker import ClickerService\n            self.clicker = ClickerService(log=self._enqueue_log)\n            self.clicker.install_hotkeys()\n        except Exception as _e:\n            self.clicker = None\n            self._enqueue_log(f'连点器初始化失败: {_e}', 'warning')",
@@ -528,7 +632,7 @@ FREE_INJECT_PATCHES = [
 # index.html: <title> 定名 + </body> 前 FREE_BUILD 脚本(付费页拦截 + 会员引导弹窗)
 # app.js: NAV_PAID_PAGES 从 ['pvp','aipvp','daily'] 改为 ['auto','aipvp','daily']
 #         (免费噱头 = pvp 页; 付费 = 丢球/挂机页 + AI 对战接管 + 日常)
-FREE_PATCH_HTML = """<script>
+FREE_PATCH_HTML = r"""<script>
 /* [FREE BUILD] 免费版补丁: 付费页拦截 + 会员引导 */
 window.FREE_BUILD = true;
 window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
@@ -625,11 +729,110 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
     // WebView2 二次锁: pywebviewready 链路可能在 DOMContentLoaded 之后复位导航,
     // 延迟一口确保 onclick 覆写不被任何异步初始化覆盖
     setTimeout(freeNav, 600);
-    // 头像点击: 免费版已验证则提示, 未验证弹入群验证
+    // 头像点击: 已验证提示, 未验证弹入群验证(防倒卖: 抓包识别功能须验证后解锁)
     window.authClick = function () {
-        if (window.showProModal) showProModal('会员开通');
+        freeVerifyFlow();
     };
-    // 免费版身份显示: 主仓 renderAuth 对未授权显示「未登录 · 点击登录」, 免费版改写
+    // ---- 入群验证弹层(QQ号 + 群口令双输入, customModal 单框不敷用, 自建轻量层) ----
+    var _freeVerifyOverlay = null;
+    function freeVerifyEnsureOverlay() {
+        if (_freeVerifyOverlay) return _freeVerifyOverlay;
+        var ov = document.createElement('div');
+        ov.className = 'custom-modal-overlay';
+        ov.id = 'freeVerifyOverlay';
+        ov.innerHTML = '<div class="custom-modal" style="max-width:340px">'
+            + '<h3>入群验证</h3>'
+            + '<p style="font-size:12px;opacity:.75;line-height:1.7">PVP 实时识别需要完成免费的入群验证。<br>'
+            + 'QQ 号用于绑定本机(一号一机), 群口令见 QQ 群公告。</p>'
+            + '<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">'
+            + '<input type="text" id="freeVfQq" class="form-input" placeholder="QQ 号" maxlength="12" autocomplete="off">'
+            + '<input type="text" id="freeVfKey" class="form-input" placeholder="QQ 群口令(见群公告)" autocomplete="off">'
+            + '</div>'
+            + '<div class="custom-modal-actions" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
+            + '<button class="btn btn-ghost" id="freeVfCancel">取消</button>'
+            + '<button class="btn btn-primary" id="freeVfGo">验证</button>'
+            + '</div></div>';
+        document.body.appendChild(ov);
+        _freeVerifyOverlay = ov;
+        ov.querySelector('#freeVfCancel').onclick = function () { ov.classList.remove('show'); };
+        ov.onclick = function (e) { if (e.target === ov) ov.classList.remove('show'); };
+        return ov;
+    }
+    async function freeVerifyFlow() {
+        var ov = freeVerifyEnsureOverlay();
+        var qqEl = ov.querySelector('#freeVfQq'), keyEl = ov.querySelector('#freeVfKey');
+        qqEl.value = ''; keyEl.value = '';
+        ov.classList.add('show');
+        setTimeout(function () { qqEl.focus(); }, 60);
+        var goBtn = ov.querySelector('#freeVfGo');
+        goBtn.onclick = async function () {
+            var qq = qqEl.value.trim(), key = keyEl.value.trim();
+            if (!/^\d{5,12}$/.test(qq)) { if (window.showToast) showToast('请填写正确的 QQ 号', 'warning'); return; }
+            if (!key) { if (window.showToast) showToast('请填写群口令(见 QQ 群公告)', 'warning'); return; }
+            goBtn.disabled = true; goBtn.textContent = '验证中…';
+            try {
+                var r = await pywebview.api.free_verify_group(qq, key);
+                if (r && r.ok && r.verified) {
+                    ov.classList.remove('show');
+                    if (window.showToast) showToast(r.message || '验证通过', 'success');
+                    window.FREE_VERIFIED = true;
+                    if (window.freeApplyVerifyUI) freeApplyVerifyUI(true);
+                } else {
+                    if (window.showToast) showToast((r && r.message) || '验证失败', 'error');
+                }
+            } catch (e) {
+                if (window.showToast) showToast('验证异常: ' + e, 'error');
+            }
+            goBtn.disabled = false; goBtn.textContent = '验证';
+        };
+        keyEl.onkeydown = function (e) { if (e.key === 'Enter') goBtn.click(); };
+        qqEl.onkeydown = function (e) { if (e.key === 'Enter') keyEl.focus(); };
+    }
+    window.freeVerifyFlow = freeVerifyFlow;
+    // ---- PVP 页锁幕: 未验证盖"入群验证"引导(后端 _free_gate 同步硬闸) ----
+    window.freeApplyVerifyUI = function (verified) {
+        var page = document.getElementById('page-pvp');
+        if (!page) return;
+        var veil = page.querySelector('.free-verify-veil');
+        if (verified) {
+            if (veil) veil.remove();
+            var sub = document.getElementById('authState');
+            if (sub) sub.innerHTML = '<span class="auth-exp">已验证 · 感谢支持正版</span>';
+            return;
+        }
+        if (veil) return;
+        veil = document.createElement('div');
+        veil.className = 'auth-veil free-verify-veil';
+        veil.innerHTML = '<div class="av-box">'
+            + '<div class="av-icon">' + (window.icon ? icon('lock', 36) : '') + '</div>'
+            + '<div class="av-title">PVP 识别需要入群验证</div>'
+            + '<div class="av-desc">验证完全免费: 输入 QQ 号 + 群口令即可<br>口令见 QQ 群公告 · 一号绑定一机 · 本机数据不上传</div>'
+            + '<button class="btn btn-primary" onclick="freeVerifyFlow()">立即验证</button></div>';
+        page.appendChild(veil);
+    };
+    // 启动时查验证态: 未验证 → pvp 页上锁 + 头像提示"点击验证"
+    (function freeVerifyBoot() {
+        var ask = function () {
+            try {
+                pywebview.api.free_verify_status().then(function (st) {
+                    var ok = !!(st && st.verified);
+                    window.FREE_VERIFIED = ok;
+                    if (window.freeApplyVerifyUI) freeApplyVerifyUI(ok);
+                    if (!ok) {
+                        var sub = document.getElementById('authState');
+                        if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
+                        var box = document.getElementById('authAvatarBox');
+                        if (box) box.title = '点击完成入群验证(免费)';
+                    }
+                }).catch(function () {});
+            } catch (e) { /* web 模式无 pywebview 桩时静默 */ }
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(ask, 400); });
+        else setTimeout(ask, 400);
+        // pywebview 桩就绪晚于 DOM 的场景再补一口
+        window.addEventListener('pywebviewready', function () { setTimeout(ask, 200); });
+    })();
+    // 免费版身份显示: 已验证显示昵称, 未验证引导验证(覆盖主仓 renderAuth 的未登录文案)
     if (typeof window.renderAuth === 'function') {
         var _ra = window.renderAuth;
         window.renderAuth = function () {
@@ -637,8 +840,13 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
             try {
                 var sub = document.getElementById('authState');
                 var box = document.getElementById('authAvatarBox');
-                if (sub) sub.innerHTML = '<span class="auth-exp">免费版 · 点击开通会员</span>';
-                if (box) box.title = '免费版 — 点击开通会员';
+                if (window.FREE_VERIFIED) {
+                    if (sub) sub.innerHTML = '<span class="auth-exp">已验证 · 感谢支持正版</span>';
+                    if (box) box.title = '已通过入群验证';
+                } else {
+                    if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
+                    if (box) box.title = '点击完成入群验证(免费)';
+                }
             } catch (e) { /* ignore */ }
             return r;
         };
@@ -761,11 +969,19 @@ def apply_source_patches(main_root: Path, out_root: Path) -> None:
 
 
 def apply_inject_files(out_root: Path) -> None:
-    """把 tools/free_inject/ 下的免费专属文件拷入免费树"""
+    """把 tools/free_inject/ 下的免费专属文件拷入免费树。
+
+    商人文件(bridge_merchant.py/merchant.js/css)接口保护不入库: 开源 clone 出来的
+    仓库天然缺这几个文件, 此处降级为跳过并告警(而不是 SystemExit 中断整树同步);
+    本地开发机实体文件存在时行为不变。"""
+    merchant_rels = {r for r in INJECT_FILES if "merchant" in r}
     for rel in INJECT_FILES:
         src = FREE_INJECT_ROOT / rel
         dst = out_root / rel
         if not src.exists():
+            if rel in merchant_rels:
+                print(f"[sync_free] 注入跳过(接口保护, 本地无实体文件): {rel}")
+                continue
             raise SystemExit(f"[sync_free] 注入源文件缺失: {src}")
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -773,16 +989,27 @@ def apply_inject_files(out_root: Path) -> None:
 
 
 def apply_inject_patches(out_root: Path) -> None:
-    """免费专属模块的接线补丁(幂等同 SOURCE_PATCHES, 作用于注入文件拷入之后)"""
+    """免费专属模块的接线补丁(幂等同 SOURCE_PATCHES, 作用于注入文件拷入之后)。
+
+    商人相关补丁锚点失效/目标缺失时降级为跳过(与 apply_inject_files 的接口保护
+    容错对齐): 开源 clone 树没有商人文件, bridge.py 里的 Mixin 挂载补丁应自然
+    跳过; 但若连点器等非商人补丁锚点失效仍硬报错。"""
     for rel, old, new, why in FREE_INJECT_PATCHES:
+        is_merchant = "MERCHANT" in why or "merchant" in why.lower()
         dst = out_root / rel
         if not dst.exists():
+            if is_merchant:
+                print(f"[sync_free] 注入补丁跳过(接口保护): {why} ({rel})")
+                continue
             raise SystemExit(f"[sync_free] 注入补丁目标不存在({why}): {rel}")
         text = dst.read_text(encoding="utf-8")
         n = text.count(old)
         if n < 1:
             if new in text:
                 print(f"[sync_free] 注入补丁跳过(已应用): {why} ({rel})")
+                continue
+            if is_merchant:
+                print(f"[sync_free] 注入补丁跳过(接口保护, 锚点失效): {why} ({rel})")
                 continue
             raise SystemExit(f"[sync_free] 注入补丁锚点失效({why}): {rel} 命中 0 次, 请核对主仓改动")
         dst.write_text(text.replace(old, new), encoding="utf-8")
