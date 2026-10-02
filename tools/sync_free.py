@@ -645,6 +645,37 @@ FREE_INJECT_PATCHES = [
      "        self._load_throw_config()",
      "        self._load_throw_config()\n        # [MERCHANT] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass\n        # [CLICKER] 连点器服务(免费专属): 热键注册失败不影响主功能\n        try:\n            from src.gui.bridge_clicker import ClickerService\n            self.clicker = ClickerService(log=self._enqueue_log)\n            self.clicker.install_hotkeys()\n        except Exception as _e:\n            self.clicker = None\n            self._enqueue_log(f'连点器初始化失败: {_e}', 'warning')",
      "AppBridge.__init__ 调 merchant_init + 连点器初始化"),
+    # 2) [MERCHANT] 数据源接口保护闸: merchant_fetch 在线拉聚合页, 未入群验证一律拒绝
+    #    (防倒卖: 商人聚合源端点藏在闭源 bridge_merchant.py 里, 不给未验证用户消费)
+    ("src/gui/bridge_merchant.py",
+     "    def merchant_fetch(self, force: bool = False) -> dict:",
+     "    def merchant_fetch(self, force: bool = False) -> dict:\n"
+     "        gate = self._free_gate()  # [FREE BUILD] 入群验证闸(接口保护防倒卖)\n"
+     "        if gate:\n"
+     "            return {\"success\": False, \"message\": gate[\"message\"],\n"
+     "                    \"free_verify_required\": True}",
+     "merchant_fetch 补入群验证闸(接口保护)"),
+    # 3) [MERCHANT] 历史查询同闸(历史记录也来自抓取数据)
+    ("src/gui/bridge_merchant.py",
+     "    def merchant_history(self) -> dict:",
+     "    def merchant_history(self) -> dict:\n"
+     "        gate = self._free_gate()  # [FREE BUILD] 入群验证闸(接口保护防倒卖)\n"
+     "        if gate:\n"
+     "            return {\"success\": False, \"message\": gate[\"message\"],\n"
+     "                    \"free_verify_required\": True}",
+     "merchant_history 补入群验证闸(接口保护)"),
+    # 4) [MERCHANT] merchant.js: fetch 被闸拒绝时弹验证框(与 pvp.js 同款联动)
+    ("src/gui/web/assets/merchant.js",
+     "        const r = await window.pywebview.api.merchant_fetch(!!force);\n"
+     "        if (r && r.success) {",
+     "        const r = await window.pywebview.api.merchant_fetch(!!force);\n"
+     "        if (r && r.free_verify_required) {  // [FREE BUILD] 未验证 → 弹入群验证\n"
+     "            if (window.freeVerifyFlow) freeVerifyFlow();\n"
+     "            if (grid) grid.innerHTML = '<div class=\"bag-empty\">请先完成入群验证 (点左侧头像)</div>';\n"
+     "            return;\n"
+     "        }\n"
+     "        if (r && r.success) {",
+     "merchant.js 未验证弹验证引导"),
 ]
 
 # ---------------- 免费版前端补丁 ----------------
