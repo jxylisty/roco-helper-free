@@ -498,6 +498,7 @@ FREE_INJECT_ROOT = Path(__file__).resolve().parent / "free_inject"
 # 注入文件的树内落点(相对主仓根): free_inject 下的相对路径 = 免费树相对路径
 INJECT_FILES = [
     "src/gui/bridge_merchant.py",
+    "src/gui/bridge_clicker.py",
     "src/gui/web/assets/merchant.js",
     "src/gui/web/assets/merchant.css",
 ]
@@ -505,20 +506,22 @@ INJECT_FILES = [
 # 免费专属模块的接线补丁: 语义同 SOURCE_PATCHES, 但锚点失效时按"已注入"幂等跳过
 # 2026-10-01 工具箱页签化后, 前端接线(index.html 页签/app.js 路由)已收进主仓原生代码,
 # 不再需要注入补丁; bridge.py 三处保留(幂等, 主仓文件可能被还原后重接)。
+# 2026-10-02 新增鼠标连点器(bridge_clicker.py, 免费专属): 纯 SendInput 鼠标事件,
+# 与主仓付费自动化执行层(human_input/battle_engine)无任何代码关联。
 FREE_INJECT_PATCHES = [
     # 1) AppBridge 挂 Mixin
     ("src/gui/bridge.py",
      "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n):",
-     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n):",
-     "AppBridge 挂 MerchantMixin"),
+     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n    ClickerMixin,   # [CLICKER] 鼠标连点器(免费专属)\n):",
+     "AppBridge 挂 MerchantMixin + ClickerMixin"),
     ("src/gui/bridge.py",
      "from src.gui.bridge_tools import ToolsMixin",
-     "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [MERCHANT]",
-     "import MerchantMixin"),
+     "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [MERCHANT]\nfrom src.gui.bridge_clicker import ClickerService as ClickerMixin  # [CLICKER]",
+     "import MerchantMixin + ClickerMixin"),
     ("src/gui/bridge.py",
      "        self._load_throw_config()",
-     "        self._load_throw_config()\n        # [MERCHANT] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass",
-     "AppBridge.__init__ 调 merchant_init"),
+     "        self._load_throw_config()\n        # [MERCHANT] 远行商人服务状态初始化(纯缓存字段, 无副作用)\n        try:\n            self.merchant_init()\n        except Exception:\n            pass\n        # [CLICKER] 连点器服务(免费专属): 热键注册失败不影响主功能\n        try:\n            from src.gui.bridge_clicker import ClickerService\n            self.clicker = ClickerService(log=self._enqueue_log)\n            self.clicker.install_hotkeys()\n        except Exception as _e:\n            self.clicker = None\n            self._enqueue_log(f'连点器初始化失败: {_e}', 'warning')",
+     "AppBridge.__init__ 调 merchant_init + 连点器初始化"),
 ]
 
 # ---------------- 免费版前端补丁 ----------------

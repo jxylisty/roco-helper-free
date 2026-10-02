@@ -34,7 +34,7 @@
 | **精灵图鉴** | `#page-pokedex`<br>(in `index.html`) | `assets/pokedex.js` | `src/pvp/data/pet_index.json`<br>`src/pvp/data/pet_detail.json` | 685+ 全量精灵 Wiki 数据速查、种族值、技能表与进化链。 |
 | **属性克制计算器** | `#page-typecalc`<br>(in `index.html`) | `assets/typecalc.js` | `src/pvp/data/type_chart.json` | 18 系属性攻防克制速查，支持双克（×3.0）与双抗（×0.25）复合倍率推算。 |
 | **蛋组互查** | `#page-eggquery`<br>(in `index.html`) | `assets/eggquery.js` | `assets/data/egg_data.json` | 精灵生蛋分组反查、亲代配对互通性快速校验。 |
-| **异色概率计算器** | `#page-shinycalc`<br>(in `index.html`) | `assets/shinycalc.js` | `assets/data/shiny_breeding.json` | 官方 7 大渠道异色概率计算、接触加成与 N 蛋期望保底估算。 |
+| **鼠标连点器**<br>*(免费专属)* | `#page-clicker`<br>(in `index.html`) | `assets/clicker.js` | `src/gui/bridge_clicker.py`<br>(RPC: `clicker_*`) | SendInput 硬件级连点：单点/双击/右键、CPS 精细调速、随机抖动、最多 8 个点位循环、全局热键。 |
 
 ---
 
