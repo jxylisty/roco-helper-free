@@ -1,0 +1,35 @@
+# ----------------------------------------------------
+# .ignore — 通用检索与 AI 工具屏蔽清单
+# ----------------------------------------------------
+
+dist_free/src-tauri/target/
+src-tauri/target/
+**/assets/img/
+**/data/assets/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.ico
+*.gif
+*.exe
+*.pyd
+*.rlib
+
+**/src/pvp/data/pet_skills.json
+**/src/pvp/data/pet_detail.json
+**/src/pvp/data/skills_with_tags.json
+**/src/gui/web/assets/data/egg_probabilities.json
+**/src/gui/web/assets/pet_asset_map.js
+
+.venv*/
+venv*/
+node_modules/
+__pycache__/
+*.pyc
+*.log
+*.pcap
+output/
+data/logs/
+data/rounds/
+history.db

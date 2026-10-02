@@ -1,0 +1,49 @@
+# ----------------------------------------------------
+# .cursorignore — 屏蔽无关高噪、超大文件，加速 AI 索引
+# ----------------------------------------------------
+
+# 1. 超大构建产物与二进制缓存 (严重堵塞 AI 索引)
+dist_free/src-tauri/target/
+src-tauri/target/
+*.exe
+*.pyd
+*.dll
+*.so
+*.dylib
+*.rlib
+
+# 2. 庞大图片静态素材库 (数千张精灵与技能贴图，AI 不需要阅读二进制像素)
+**/assets/img/
+**/data/assets/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.ico
+*.gif
+
+# 3. 巨型死数据字典 (单文件上百 KB ~ 数 MB，严重挤占 AI Token)
+**/src/pvp/data/pet_skills.json
+**/src/pvp/data/pet_detail.json
+**/src/pvp/data/skills_with_tags.json
+**/src/pvp/data/skills.json
+**/src/pvp/data/pet_family.json
+**/src/pvp/data/type_chart.json
+**/src/gui/web/assets/data/egg_probabilities.json
+**/src/gui/web/assets/pet_asset_map.js
+
+# 4. 虚拟环境与包依赖
+.venv*/
+venv*/
+node_modules/
+__pycache__/
+*.pyc
+
+# 5. 日志、历史记录与调试产物
+*.log
+*.pcap
+output/
+data/logs/
+data/rounds/
+history.db
+*.bak

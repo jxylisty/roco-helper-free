@@ -876,6 +876,13 @@ def main() -> None:
     readme_free = out_root / "README.md"
     readme_free.write_text(FREE_DIST_README.replace("FREE_QQ_PLACEHOLDER", FREE_QQ), encoding="utf-8")
     print(f"[sync_free] 免费发布说明已写入: {readme_free}")
+
+    # 将本仓库规范的免费版 AGENTS.md 覆盖到产物树, 避免主仓旧规则产生认知冲突
+    free_agents = Path(__file__).resolve().parent.parent / "AGENTS.md"
+    if free_agents.exists():
+        shutil.copy2(free_agents, out_root / "AGENTS.md")
+        print("[sync_free] 免费版 AGENTS.md 已同步至产物树")
+
     print(f"[sync_free] 免费树已生成: {out_root}")
     print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
 
