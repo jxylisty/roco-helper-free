@@ -33,3 +33,5 @@ _preview_free/
 dist_free/
 _sync_log.txt
 tools/_import_report.txt
+# 本地测试产物(playwright 截图等, 对齐主仓 tools/output 惯例)
+tools/output/
