@@ -18,8 +18,10 @@
 """
 import argparse
 import fnmatch
+import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 # Windows 控制台编码保护, 避免遇到非 GBK 字符（如零宽空格等）时抛 UnicodeEncodeError
@@ -239,13 +241,15 @@ SOURCE_PATCHES = [
     #     资源服务, 后端 17366 完全收不到 → "启动识别点了没反应"。免费版端口独立,
     #     直接硬编码, 不做任何 origin 推断。
     ("src/gui/web/assets/web_adapter.js",
-     "    const API_BASE = window.location.origin.startsWith('http') \n        ? window.location.origin \n        : 'http://127.0.0.1:17365';",
+     "    const API_BASE = _isBackendOrigin ? _loc.origin : 'http://127.0.0.1:17365';",
      "    // [FREE BUILD] Tauri/WebView2 的 origin 是 http://tauri.localhost(也以 http 开头),\n"
      "    // 主仓的 origin 推断必然选错; 免费版端口独立(17366), 硬编码后端基址\n"
      "    const API_BASE = 'http://127.0.0.1:17366';",
      "适配器 API_BASE 硬编码 17366"),
     ("src/gui/web/assets/web_adapter.js",
-     "        const wsHost = (window.location.protocol.startsWith('http') && window.location.host)\n            ? window.location.host\n            : '127.0.0.1:17365';",
+     "        const _wsHostOk = window.location.protocol.startsWith('http') &&\n"
+     "            ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname);\n"
+     "        const wsHost = _wsHostOk ? window.location.host : '127.0.0.1:17365';",
      "        // [FREE BUILD] 同 API_BASE: Tauri 下 location.host 是 tauri.localhost, 硬编码\n        const wsHost = '127.0.0.1:17366';",
      "适配器 WS host 硬编码 17366"),
     # 13) 去抓包化: 数据源固定+UI 隐藏+文案改口(用户不应感知"抓包"实现细节;
@@ -291,12 +295,14 @@ SOURCE_PATCHES = [
      '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()">',
      '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()" style="display:none">',
      "隐藏标题栏壁纸按钮"),
-    ("src/gui/web/index.html",
-     "    function init() {\n        var c = customUrl();",
-     "    function init() {\n"
-     "        // [FREE BUILD] 壁纸切换为付费特权; 免费版固定默认壁纸(好看但不给换)\n"
-     "        _paint(WALLPAPERS[0].url); return;\n"
-     "        var c = customUrl();",
+    ("src/gui/web/assets/settings.js",
+     "        // 应用壁纸图片并同步两处 UI\n"
+     "        var targetWp = custom ? custom : (PRESET_WALLPAPERS[wpIdx] ? PRESET_WALLPAPERS[wpIdx].url : '');\n"
+     "        paintWallpaperWithScrim(targetWp, scrim);",
+     "        // [FREE BUILD] 壁纸切换为付费特权: 免费版永远钉死默认壁纸(第一张预设),\n"
+     "        // 用户本地存的 idx/custom 全部忽略(好看但不给换)\n"
+     "        var targetWp = PRESET_WALLPAPERS[0] ? PRESET_WALLPAPERS[0].url : '';\n"
+     "        paintWallpaperWithScrim(targetWp, scrim);",
      "免费版固定默认壁纸(不可切换)"),
     ("src/gui/web/assets/pvp.js",
      "{ ocr: 'OCR 识别', capture: '自研抓包', rkpp: '自研解码' }",
@@ -325,7 +331,9 @@ STUBS = {
         '"""[Free 构建存根] 免费版授权: 付费闸门统一指向会员引导 + 入群验证防倒卖。"""\n\n'
         'import hashlib\n'
         'import json as _json\n'
-        'import time as _time\n\n\n'
+        'import time as _time\n\n'
+        f'FREE_BUILD_TS = {int(time.time() * 1000)}  # 构建时间戳(ms): Worker 校验构建过期\n'
+        f'FREE_BUILD_ID = "{time.strftime("%Y%m%d")}-{os.getpid():x}"  # 分发批次水印: 泄密溯源\n\n\n'
         f'FREE_QQ = "{FREE_QQ}"  # 会员购买引导(小鲸鱼)\n\n\n'
         'def get_hwid() -> str:\n'
         '    """机器码: MAC + 主机名 + Windows MachineGuid 的 SHA256(与 Pro 版 auth_core 同算法)。\n'
@@ -458,7 +466,9 @@ STUBS = {
         '            req = _ur.Request(\n'
         '                "https://lucky-cell-cd0b.zzx051012-e82.workers.dev/free/verify",\n'
         '                data=_json.dumps({"qq": qq, "group_key": group_key,\n'
-        '                                  "hwid": get_hwid()}).encode(),\n'
+        '                                  "hwid": get_hwid(),\n'
+        '                                  "build_ts": FREE_BUILD_TS,\n'
+        '                                  "build_id": FREE_BUILD_ID}).encode(),\n'
         '                headers={"Content-Type": "application/json",\n'
         '                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})\n'
         '            with _ur.urlopen(req, timeout=15) as resp:\n'
