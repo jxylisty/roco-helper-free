@@ -268,8 +268,10 @@ SOURCE_PATCHES = [
      "隐藏数据采集条(开发者工具)"),
     ("src/gui/bridge_pvp.py",
      '        src = str(source or "").lower()\n        if src not in ("capture", "rkpp", "ocr"):\n            src = getattr(self, "_pvp_source", "") or self._load_pvp_source() or "ocr"',
-     '        src = "capture"  # [FREE BUILD] 数据源固定实时同步(OCR 代码保留备胎, UI 已隐藏)',
-     "数据源固定 capture"),
+     '        src = "rkpp"  # [FREE BUILD] 数据源固定 RKPP 全帧解码(与付费版同链路, 无 OCR);\n'
+     '        # 2026-10-04 修正: 此前误接 capture 源 — 那是半成品适配器(精灵名/血量"待补"),\n'
+     '        # 表现为对局 vs未知+无战报。rkpp 依赖: 项目同级 rkpp_ref/(rkpp_live_tools.py + Key/latest.key)',
+     "数据源固定 rkpp(全帧解码, 与付费版一致)"),
     ("src/gui/bridge_pvp.py",
      '"抓包子系统已启动(同构数据源)"',
      '"实时数据通道已启动"',

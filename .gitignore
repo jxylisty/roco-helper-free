@@ -40,3 +40,6 @@ tools/output/
 tools/free_inject/src/gui/bridge_merchant.py
 tools/free_inject/src/gui/web/assets/merchant.js
 tools/free_inject/src/gui/web/assets/merchant.css
+
+# rkpp_ref: 主仓解码器项目 junction(本机指向 D:\洛克王国aikpp_ref), 只本机存在不入库
+rkpp_ref/
