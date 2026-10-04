@@ -311,9 +311,10 @@ SOURCE_PATCHES = [
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",
      "前端数据源标签改口"),
     # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
+    #     2026-10-04 适配 3cc180d HUD 电竞级重构(hud-btn class + updateAutopilotBtn)
     ("src/gui/web/battle_hud.html",
-     '            <button class="btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
-     '            <button class="btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
+     '<button class="hud-btn btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
+     '<button class="hud-btn btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
      "悬浮窗隐藏 AI 接管按钮"),
     ("src/gui/web/battle_hud.html",
      "        b.classList.toggle('active', on);\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
