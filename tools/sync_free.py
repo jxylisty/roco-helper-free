@@ -1120,6 +1120,13 @@ def main() -> None:
         if target_dir.exists():
             shutil.rmtree(keep_dir, ignore_errors=True)
             shutil.move(str(target_dir), str(keep_dir))
+        # 保留运行时用户数据: data/ 是实测产物(抓包帧/对局记录/验证 token),
+        # 2026-10-04 实测时被重建误删过一次, 从此移出→移回
+        data_dir = out_root / "data"
+        keep_data = out_root.parent / (out_root.name + "_data_keep")
+        if data_dir.exists():
+            shutil.rmtree(keep_data, ignore_errors=True)
+            shutil.move(str(data_dir), str(keep_data))
         shutil.rmtree(out_root, ignore_errors=True)
     for rel, src in iter_source_files(main_root):
         dst = out_root / rel
@@ -1170,6 +1177,12 @@ def main() -> None:
         (out_root / "src-tauri").mkdir(parents=True, exist_ok=True)
         shutil.move(str(keep_dir), str(out_root / "src-tauri" / "target"))
         print("[sync_free] Tauri 编译缓存已保留(增量编译)")
+
+    # 归还运行时用户数据(见 main() 开头的移出逻辑)
+    keep_data = out_root.parent / (out_root.name + "_data_keep")
+    if keep_data.exists():
+        shutil.move(str(keep_data), str(out_root / "data"))
+        print("[sync_free] 运行时数据已保留(data/ 抓包帧/对局/验证态)")
 
     marker = out_root / "FREE_BUILD"
     marker.write_text(
