@@ -306,6 +306,33 @@ SOURCE_PATCHES = [
      "        var targetWp = PRESET_WALLPAPERS[0] ? PRESET_WALLPAPERS[0].url : '';\n"
      "        paintWallpaperWithScrim(targetWp, scrim);",
      "免费版固定默认壁纸(不可切换)"),
+    # 15) 健康检查「账户状态」探针: 免费树无 auth.py(物理抽壳), 懒导入必抛
+    #     cannot import name 'auth' → 用户看到内部报错+误导性"重启助手"。
+    #     免费版改读 _free_verified(入群验证态), 语义对齐免费版账户观。
+    #     注意: _probe_auth 是 @staticmethod, 原 try 块尾部(auth.status() 之后)
+    #     的 DEV_MODE 分支/未登录分支保留但不可达——免费版直接 return。
+    ("src/gui/bridge_health.py",
+     '    @staticmethod\n'
+     '    def _probe_auth() -> dict:\n'
+     '        """登录态: 用户版未登录=warn(免费功能可用), 开发者版恒 ok"""\n'
+     '        try:\n'
+     '            from src.gui import auth\n'
+     '            st = auth.status()\n',
+     '    @staticmethod\n'
+     '    def _probe_auth() -> dict:\n'
+     '        """[FREE BUILD] 账户状态: 免费树无 auth 体系, 读入群验证态"""\n'
+     '        try:\n'
+     '            from src.gui.bridge_auth import _free_verified\n'
+     '            if _free_verified():\n'
+     '                return HealthMixin._mk("auth", "账户状态", "ok",\n'
+     '                                       "已通过入群验证")\n'
+     '            return HealthMixin._mk(\n'
+     '                "auth", "账户状态", "warn", "未验证",\n'
+     '                "点击左侧头像完成入群验证(免费); 验证后解锁 PVP 识别与远行商人")\n'
+     '            # ---- 以下为主仓原逻辑, 免费树无 auth 模块, 永不可达 ----\n'
+     '            from src.gui import auth\n'
+     '            st = auth.status()\n',
+     "健康检查账户状态改读入群验证态(免 auth 模块)"),
     ("src/gui/web/assets/pvp.js",
      "{ ocr: 'OCR 识别', capture: '自研抓包', rkpp: '自研解码' }",
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",
