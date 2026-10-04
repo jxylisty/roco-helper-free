@@ -333,6 +333,36 @@ SOURCE_PATCHES = [
      '            from src.gui import auth\n'
      '            st = auth.status()\n',
      "健康检查账户状态改读入群验证态(免 auth 模块)"),
+    # 16) 健康检查「按键驱动」探针: interception 驱动只服务付费丢球/挂机,
+    #     免费版唯一输入功能=连点器(user32.SendInput 系统原生, 无需驱动)。
+    #     免费用户没装驱动时这项恒 fail(红条)+引导装驱动 = 纯误导。改写为连点器自检。
+    ("src/gui/bridge_health.py",
+     '    def _probe_interception() -> dict:\n'
+     '        """按键驱动: 键盘控制是否可用"""\n'
+     '        try:\n'
+     '            import interception  # noqa: F401\n'
+     '            interception.auto_capture_devices()\n'
+     '            return HealthMixin._mk("driver", "按键驱动", "ok",\n'
+     '                                   "键盘驱动正常 (自动丢球与挂机功能就绪)")\n'
+     '        except Exception as e:\n'
+     '            return HealthMixin._mk(\n'
+     '                "driver", "按键驱动", "fail", "按键驱动未安装或被拦截",\n'
+     '                "自动丢球/挂机需要此驱动: 请重新安装助手并允许驱动安装，"\n'
+     '                "或右键以管理员身份运行一次")',
+     '    def _probe_interception() -> dict:\n'
+     '        """[FREE BUILD] 按键驱动: 免费版无丢球/挂机, 改检连点器 SendInput 链路"""\n'
+     '        try:\n'
+     '            import ctypes\n'
+     '            u32 = ctypes.windll.user32\n'
+     '            if not u32.SendInput:\n'
+     '                raise OSError("SendInput 不可用")\n'
+     '            return HealthMixin._mk("driver", "输入链路", "ok",\n'
+     '                                   "系统输入链路正常 (连点器就绪)")\n'
+     '        except Exception as e:\n'
+     '            return HealthMixin._mk(\n'
+     '                "driver", "输入链路", "fail", f"系统输入链路异常: {e}",\n'
+     '                "鼠标连点器依赖 Windows 原生输入, 异常极少见; 重启助手后重试")',
+     "健康检查按键驱动改连点器输入链路自检(免 interception)"),
     ("src/gui/web/assets/pvp.js",
      "{ ocr: 'OCR 识别', capture: '自研抓包', rkpp: '自研解码' }",
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",
