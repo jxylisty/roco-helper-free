@@ -1,160 +1,181 @@
 # -*- coding: utf-8 -*-
-"""build_shiny_species.py — 构建最新的异色繁育核心物种库 shiny_species.json
+"""build_shiny_species.py — 从官方 API 缓存重建异色繁育物种库 shiny_species.json
 
-数据源:
-  1. 官方 API 缓存: crawler_official_api/output/cache/list.json (211 异色精灵)
-  2. 蛋组库: src/gui/web/assets/data/egg_data.json (422 精灵蛋组)
-  3. 异色家族库: src/gui/web/assets/data/shiny_families.json (88 异色家族)
-  4. 现有核心库: src/gui/web/assets/data/shiny_species.json (旧版 32 核心)
+数据源（全部为官方一手数据, 不再依赖过期的 egg_data/shiny_families 二级文件）:
+  1. 官方列表缓存: crawler_official_api/output/cache/list.json
+     每只精灵自带 has_shiny 标记 + egg_group_names 蛋组（含最新赛季, 无需二级源）
+  2. 进化链: 主仓 src/pvp/data/pet_family.json（资源更新器自动维护;
+     最新巨型 petId 可能缺链, 由 handbook_no 兜底归族）
 
-产出:
-  src/gui/web/assets/data/shiny_species.json (全量可繁育异色核心物种，含别名/蛋组/头像ID)
+聚合语义:
+  has_shiny → pet_family 链归族 → 同 handbook_no 归族 → 同规范化名归族
+  （并查集三级合并; 与主仓 shiny_family_builder.py 的家族语义对齐）
+  家族蛋组 = 全体异色成员蛋组并集; 基础形态 = stage 最小者做代表行。
+  无有效蛋组（未发现组/纯观赏）的家族不进繁育库。
+
+产出（双写主仓与免费仓）:
+  src/gui/web/assets/data/shiny_species.json
+  dist_free/src/gui/web/assets/data/shiny_species.json （本仓内相对路径）
+
+维护姿势: 游戏新赛季后重跑 crawler 的 update_data.py fetch 刷新 list.json,
+再跑本脚本即可, 名单自动跟进, 无需改代码。
 """
 import json
 import re
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_ROOT = Path(r"d:\洛克王国ai\lkwgai_pvp_assistant")
 
-CRAWLER_LIST = Path(r"C:\Users\zzx05\Documents\HBuilderProjects\luokewangguo\crawler_official_api\output\cache\list.json")
-EGG_DATA_PATH = MAIN_ROOT / "src" / "gui" / "web" / "assets" / "data" / "egg_data.json"
-FAMILIES_PATH = MAIN_ROOT / "src" / "gui" / "web" / "assets" / "data" / "shiny_families.json"
-OLD_SPECIES_PATH = MAIN_ROOT / "src" / "gui" / "web" / "assets" / "data" / "shiny_species.json"
+CANDIDATE_LISTS = [
+    Path(r"C:\Users\zzx05\Documents\HBuilderProjects\luokewangguo\crawler_official_api\output\cache\list.json"),
+    MAIN_ROOT / "tools" / "output" / "cache" / "list.json",
+]
+PET_FAMILY_PATH = MAIN_ROOT / "src" / "pvp" / "data" / "pet_family.json"
 
 OUT_PATHS = [
     MAIN_ROOT / "src" / "gui" / "web" / "assets" / "data" / "shiny_species.json",
     ROOT / "dist_free" / "src" / "gui" / "web" / "assets" / "data" / "shiny_species.json",
 ]
 
+# 调研/拆包口径（2026-10 社区拆包 + 百蛋实测交叉验证, 官方未公示）:
+# 子代外显异色蛋 0.72%/颗, 外显炫彩蛋 0.36%/颗 — 每蛋常量, 不随异色亲代数量线性相加。
+# 单位: 百分点×100（centi-percent, 即 72 = 0.72%）
+SHINY_EGG_RATE_CENTI = 72
+IRIDESCENT_EGG_RATE_CENTI = 36
+
+GROUP_ORDER = [
+    "天空", "大地", "巨灵", "魔力", "软体", "妖精", "动物",
+    "植物", "昆虫", "机械", "拟人", "海洋", "两栖", "巨龙"
+]
+
+_ZW = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"), None)
+
 
 def norm(n):
-    """去除括号后缀与空格"""
-    return re.sub(r"（[^）]*）$", "", str(n or "")).strip()
+    """去零宽字符 + 剥全角括号后缀(（首领形态）等)。"""
+    return re.sub(r"（[^）]*）$", "", str(n or "").translate(_ZW).strip())
+
+
+def clean_group(g):
+    """官方组名 → 本地组名; 未发现/空返回 None。"""
+    g = str(g or "").replace("组", "").replace("岩石", "大地").strip()
+    return g if g and g != "未发现" else None
+
+
+def load_pets():
+    for p in CANDIDATE_LISTS:
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    raise SystemExit(f"官方列表缓存不存在: {CANDIDATE_LISTS}")
 
 
 def build_species():
-    egg_data = json.loads(EGG_DATA_PATH.read_text(encoding="utf-8"))
-    families = json.loads(FAMILIES_PATH.read_text(encoding="utf-8"))
-    cur_species = json.loads(OLD_SPECIES_PATH.read_text(encoding="utf-8"))
+    pets = load_pets()
+    pf = json.loads(PET_FAMILY_PATH.read_text(encoding="utf-8")) if PET_FAMILY_PATH.exists() else {}
 
-    egg_by_id = {item.get("petId"): item for item in egg_data}
-    egg_by_name = {item.get("name"): item for item in egg_data}
+    shiny = [p for p in pets if p.get("has_shiny")]
+    if not shiny:
+        raise SystemExit("缓存中无 has_shiny 精灵, 数据源异常")
 
-    # 蛋组标准顺序（保留原 12 蛋组并追加扩充组）
-    # 洛克王国常见：植物、动物、天空、妖精、大地(岩石)、拟人、机械、昆虫、海洋、软体、魔力、巨灵、两栖、巨龙
-    group_order = [
-        "天空", "大地", "巨灵", "魔力", "软体", "妖精", "动物",
-        "植物", "昆虫", "机械", "拟人", "海洋", "两栖", "巨龙"
-    ]
+    # ---- 并查集: pet_family 链 + 同 handbook_no + 同规范化名 ----
+    parent = {}
 
-    new_species_list = []
-    seen_names = set()
-    pet_id_map = {}
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
 
-    # 第一轮：保留原有 32 核心精灵的代表名与习惯配置，扩充家族别名和蛋组
-    for s in cur_species.get("SPECIES", []):
-        s_name = s["name"]
-        s_groups = list(s.get("groups", []))
-        s_aliases = list(s.get("aliases", []))
+    def union(a, b):
+        parent.setdefault(a, a)
+        parent.setdefault(b, b)
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
 
-        # 在 families 中查找对应家族
-        fam = next((f for f in families if s_name in f["family"] or any(a in f["family"] for a in s_aliases)), None)
-        if fam:
-            for m in fam.get("members", []):
-                nm = norm(m["name"])
-                if nm != s_name and nm not in s_aliases:
-                    s_aliases.append(nm)
-                pid = int(m.get("conf_id", 0))
-                e = egg_by_id.get(pid) or egg_by_name.get(m["name"]) or egg_by_name.get(nm)
-                if e:
-                    for g in e.get("eggGroups", []):
-                        g_clean = g.replace("组", "").replace("岩石", "大地")
-                        if g_clean != "未发现" and g_clean not in s_groups:
-                            s_groups.append(g_clean)
+    for p in shiny:
+        parent.setdefault("n:%s" % p["pet_id"], "n:%s" % p["pet_id"])
+        fid = (pf.get(str(p["pet_id"])) or {}).get("family_id")
+        if fid is not None:
+            union("n:%s" % p["pet_id"], "f:%s" % fid)
 
-        pid = cur_species.get("PET_ID", {}).get(s_name)
-        if not pid and fam and len(fam["members"]) > 0:
-            # 取该家族形态中 conf_id 最小或在 egg_data 中的 id
-            sorted_m = sorted(fam["members"], key=lambda x: int(x.get("conf_id", 999999)))
-            pid = int(sorted_m[0].get("conf_id", 0))
+    by_book = defaultdict(list)
+    by_key = defaultdict(list)
+    for p in shiny:
+        by_book[str(p.get("handbook_no"))].append(p)
+        by_key[norm(p["name"])].append(p)
+    for grp in list(by_book.values()) + list(by_key.values()):
+        for other in grp[1:]:
+            union("n:%s" % grp[0]["pet_id"], "n:%s" % other["pet_id"])
 
-        if pid:
-            pet_id_map[s_name] = pid
+    groups = defaultdict(list)
+    for p in shiny:
+        groups[find("n:%s" % p["pet_id"])].append(p)
 
-        entry = {
-            "name": s_name,
-            "aliases": s_aliases,
-            "groups": s_groups,
-            "petId": pid
-        }
-        new_species_list.append(entry)
-        seen_names.add(s_name)
-        for a in s_aliases:
-            seen_names.add(a)
-
-    # 第二轮：遍历 families 中尚未覆盖的所有家族，提取属于生蛋蛋组（可繁育）的家族
-    for fam in families:
-        covered = any(norm(m["name"]) in seen_names for m in fam.get("members", []))
-        if covered:
-            continue
-
-        # 检查是否具备有效蛋组
+    # ---- 组装: 蛋组并集为空(不可生蛋)的家族剔除 ----
+    group_rank = {g: i for i, g in enumerate(GROUP_ORDER)}
+    species_list = []
+    for members in groups.values():
         fam_groups = set()
-        for m in fam.get("members", []):
-            pid = int(m.get("conf_id", 0))
-            nm = norm(m["name"])
-            e = egg_by_id.get(pid) or egg_by_name.get(m["name"]) or egg_by_name.get(nm)
-            if e:
-                for g in e.get("eggGroups", []):
-                    g_clean = g.replace("组", "").replace("岩石", "大地")
-                    if g_clean != "未发现":
-                        fam_groups.add(g_clean)
-
+        for m in members:
+            for raw in m.get("egg_group_names") or []:
+                g = clean_group(raw)
+                if g:
+                    fam_groups.add(g)
         if not fam_groups:
-            # 不可生蛋/未发现组，跳过
             continue
 
-        # 选择基础形态（按总种族值最低优先，同种族值按 conf_id 最低）
-        sorted_members = sorted(
-            fam.get("members", []),
-            key=lambda x: (x.get("total") or 9999, int(x.get("conf_id", 999999)))
-        )
-        base_member = sorted_members[0]
-        base_name = norm(base_member["name"])
+        names = sorted({norm(m["name"]) for m in members})
+        base = sorted(members, key=lambda x: (x.get("stage") or 9, x["pet_id"]))[0]
+        base_name = norm(base["name"])
 
-        aliases = [norm(m["name"]) for m in fam.get("members", []) if norm(m["name"]) != base_name]
-        aliases = list(dict.fromkeys(aliases))
-
-        pid = int(base_member.get("conf_id", 0))
-        if pid:
-            pet_id_map[base_name] = pid
-
-        entry = {
+        species_list.append({
             "name": base_name,
-            "aliases": aliases,
-            "groups": sorted(list(fam_groups)),
-            "petId": pid
-        }
-        new_species_list.append(entry)
-        seen_names.add(base_name)
-        for a in aliases:
-            seen_names.add(a)
+            "aliases": [n for n in names if n != base_name],
+            "groups": sorted(fam_groups, key=lambda g: group_rank.get(g, 99)),
+            "petId": base["pet_id"],
+        })
+
+    # 排序: 旧表习惯按 petId 升序, 保持稳定可 diff
+    species_list.sort(key=lambda s: s["petId"])
 
     result_data = {
-        "SPECIES": new_species_list,
-        "GROUP_ORDER": group_order,
-        "SINGLE_SHINY_PERCENT_CENTI": 36,
-        "DOUBLE_SHINY_PERCENT_CENTI": 72,
-        "PET_ID": pet_id_map,
+        "SPECIES": species_list,
+        "GROUP_ORDER": GROUP_ORDER,
+        "SHINY_EGG_RATE_CENTI": SHINY_EGG_RATE_CENTI,
+        "IRIDESCENT_EGG_RATE_CENTI": IRIDESCENT_EGG_RATE_CENTI,
+        "PET_ID": {s["name"]: s["petId"] for s in species_list},
         "STORAGE_KEY": "roco_shiny_planner_state_v1",
+        "BUILT_FROM": {
+            "list_cache": str(next(p for p in CANDIDATE_LISTS if p.exists())),
+            "list_mtime": __import__("datetime").datetime.fromtimestamp(
+                max(p.stat().st_mtime for p in CANDIDATE_LISTS if p.exists())
+            ).strftime("%Y-%m-%d %H:%M"),
+            "shiny_total": len(shiny),
+            "breedable_families": len(species_list),
+        },
     }
 
-    # 写入目标路径
+    written = []
     for out in OUT_PATHS:
         if out.parent.exists():
             out.write_text(json.dumps(result_data, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(f"Written {len(new_species_list)} breedable species to {out}")
+            written.append(out)
+            print(f"Written {len(species_list)} breedable families -> {out}")
+    if not written:
+        raise SystemExit("无任何输出路径存在, 检查 OUT_PATHS")
+
+    # ---- 联动产出 shiny_breeding.json（eggquery 异色核心页签数据源, 此前为 0 字节空壳）----
+    breeding = [
+        {"name": s["name"], "aliases": s["aliases"], "groups": s["groups"], "petId": s["petId"]}
+        for s in species_list
+    ]
+    for out in OUT_PATHS:
+        breeding_path = out.parent / "shiny_breeding.json"
+        if breeding_path.parent.exists():
+            breeding_path.write_text(json.dumps(breeding, ensure_ascii=False, indent=1), encoding="utf-8")
 
     return result_data
 
