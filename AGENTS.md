@@ -56,6 +56,27 @@
 - **全部使用内联 SVG 矢量图标**：保持毛玻璃、高对比度暗黑科技风格（支持 `currentColor`）。
 - **大计算量必须使用 Web Worker**：如异色摆窝求解等耗时计算，禁止阻塞 UI 主线程，参考 `shiny_planner_worker.js`。
 
+### C. 前端改版禁区（gemini 等外部 AI 重构前必读）：
+本仓通过 `sync_free.py` 的**逐字节文本锚点**把免费版补丁打到主仓源文件上。前端 14 个补丁锚点
+散落在下列文件——**CSS/颜色/布局随便改，但下列结构性行（HTML 标签属性 / JS 逻辑行）保持原样**，
+改一个类名都会导致双仓同步硬报错：
+
+| 文件 | 不可改动的锚点 |
+| :--- | :--- |
+| `battle_hud.html` | `hud-btn btn-autopilot` 按钮行、`updateAutopilotBtn` 的 toggle 两行、「AI 接管」可在主控台 PVP 页开启（两处） |
+| `web_adapter.js` | API_BASE 与 wsHost 的推断逻辑块 |
+| `pvp.js` | `pvp_engine_start(src)` 调用处 `if (r.success)` 前的验证引导分支 |
+| `merchant.js` | `merchant_fetch` 调用处 `if (r && r.success)` 前的 1 行 |
+| `app.js` | `NAV_PAID_PAGES` 数组、锁幕选择器 `#page-aipvp, #page-daily` |
+| `index.html` | `data-page="auto"/"pvp"` 导航按钮、`pvpSourceSelect`、`collectorBar`、`tbBtnWallpaper`、splash 品牌名 |
+| `settings.js` | 「应用壁纸图片并同步两处 UI」至 `paintWallpaperWithScrim(targetWp, scrim)` 的 3 行 |
+
+**自检命令**：改完前端必须跑一次
+```bash
+python tools/sync_free.py --main <主仓> --out dist_free
+```
+输出含「锚点失效」= 改坏了结构行，回滚该处改动再提交。无失效则安全。
+
 ---
 
 ## 5. 验证与交付底线
