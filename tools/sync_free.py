@@ -34,6 +34,8 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
 
 # 免费版会员引导 QQ（小鲸鱼）
 FREE_QQ = "3808239548"
+# 入群验证有效期(天): 写入免费树 bridge_auth.py 存根的常量, 前端文案同步引用
+FREE_VERIFY_TTL_DAYS = 30
 
 # ---------------- 排除清单 ----------------
 # 目录级排除（相对主仓根）:
@@ -93,6 +95,7 @@ EXCLUDE_FILES = [
 # 强制包含（位于被排除目录内, 但免费功能依赖的文件; 优先于目录排除）
 INCLUDE_FORCE = [
     "data/config/roi_templates/*.json",  # ROI 坐标模板(仅 json, 不带用户截图 png)
+    "tools/diag_capture.py",             # 抓包链路 10 秒快检(用户自助排障)
 ]
 
 # 强制包含的目录: 递归带入整目录（INCLUDE_FORCE 中以目录形式列出的条目）
@@ -391,6 +394,12 @@ SOURCE_PATCHES = [
      '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
      'AI 军师建议对免费版完整可用',
      "军师空态文案去接管引导(HTML+JS默认值)"),
+    # 11) toast 置顶: 验证弹窗遮罩(custom-modal-overlay)同为 9999 且 DOM 靠后,
+    #     失败 toast 被盖在 80% 不透明毛玻璃下 = 用户眼里"验证失败没提示"
+    ("src/gui/web/assets/app.css",
+     ".toast-container {\n    position: fixed; top: 16px; right: 16px; z-index: 9999;",
+     ".toast-container {\n    position: fixed; top: 16px; right: 16px; z-index: 100000;  /* [FREE BUILD] 置顶: 高于全部弹窗遮罩, 报错提示不被吞 */",
+     "toast 层级置顶(修复弹窗内失败提示被遮罩吞掉)"),
 ]
 
 # ---------------- 存根 ----------------
@@ -404,7 +413,9 @@ STUBS = {
         'import time as _time\n\n'
         f'FREE_BUILD_TS = {int(time.time() * 1000)}  # 构建时间戳(ms): Worker 校验构建过期\n'
         f'FREE_BUILD_ID = "{time.strftime("%Y%m%d")}-{os.getpid():x}"  # 分发批次水印: 泄密溯源\n\n\n'
-        f'FREE_QQ = "{FREE_QQ}"  # 会员购买引导(小鲸鱼)\n\n\n'
+        f'FREE_QQ = "{FREE_QQ}"  # 会员购买引导(小鲸鱼)\n\n'
+        '# 入群验证有效期(天): 软过期, 过期后仅抓包识别类功能需重验, 其余功能不受影响\n'
+        f'FREE_VERIFY_TTL_DAYS = {FREE_VERIFY_TTL_DAYS}\n\n\n'
         'def get_hwid() -> str:\n'
         '    """机器码: MAC + 主机名 + Windows MachineGuid 的 SHA256(与 Pro 版 auth_core 同算法)。\n'
         '    MachineGuid 重装系统才变; 改 MAC / 改主机名 / 虚拟机克隆都不能"换机"。任一因子缺失自动降级。"""\n'
@@ -435,19 +446,19 @@ STUBS = {
         '    return CONFIG_DIR / "free_auth.json"\n\n\n'
         'def _free_verified(qq: str = "") -> dict | None:\n'
         '    """本地已验证状态(离线放行的唯一依据)。qq 非空时需匹配。\n'
-        '    7 天软过期: verified_at 超 7 天返回 None(口令在群公告定期轮换,\n'
-        '    提示重验; 期间抓包类功能闸住, 其余功能不受影响)。"""\n'
+        '    30 天软过期: verified_at 超 FREE_VERIFY_TTL_DAYS 返回 None(口令在群公告\n'
+        '    定期轮换, 提示重验; 期间抓包类功能闸住, 其余功能不受影响)。"""\n'
         '    try:\n'
         '        st = _json.loads(_free_token_file().read_text(encoding="utf-8"))\n'
         '        if st.get("token") and (not qq or st.get("qq") == qq):\n'
-        '            if _time.time() - float(st.get("verified_at") or 0) > 7 * 86400:\n'
-        '                return None  # [FREE] 验证超 7 天 → 视为待重验\n'
+        '            if _time.time() - float(st.get("verified_at") or 0) > FREE_VERIFY_TTL_DAYS * 86400:\n'
+        '                return None  # [FREE] 验证过期 → 视为待重验\n'
         '            return st\n'
         '    except Exception:\n'
         '        pass\n'
         '    return None\n\n\n'
         'def _free_verified_raw(qq: str = "") -> dict | None:\n'
-        '    """不检查 7 天的原始验证态(供前端判断"曾验证过→该重验了")。"""\n'
+        '    """不检查过期的原始验证态(供前端判断"曾验证过→该重验了")。"""\n'
         '    try:\n'
         '        st = _json.loads(_free_token_file().read_text(encoding="utf-8"))\n'
         '        if st.get("token") and (not qq or st.get("qq") == qq):\n'
@@ -469,22 +480,28 @@ STUBS = {
         '                "message": "请先完成入群验证(QQ号+群口令), 验证免费"}\n\n'
         '    def free_verify_status(self) -> dict:\n'
         '        """前端启动时轮询: 是否已通过入群验证。\n'
-        '        verify_stale=True = 曾验证但超 7 天(前端提示重验, 不强制弹窗)。"""\n'
+        '        verify_stale=True = 曾验证但已过期(前端提示重验, 不强制弹窗)。\n'
+        '        last_qq = 本机上次验证用的 QQ 号(供重验弹窗预填, 免得从头填)。"""\n'
         '        st = _free_verified()\n'
-        '        stale = bool((not st) and _free_verified_raw())\n'
+        '        raw = _free_verified_raw()\n'
+        '        stale = bool((not st) and raw)\n'
         '        return {"ok": True, "free_build": True, "verified": bool(st),\n'
         '                "verify_stale": stale,\n'
         '                "qq": (st or {}).get("qq", ""),\n'
+        '                "last_qq": (raw or {}).get("qq", ""),\n'
+        '                "verified_at": (raw or {}).get("verified_at", 0),\n'
+        '                "ttl_days": FREE_VERIFY_TTL_DAYS,\n'
         '                "nickname": (st or {}).get("nickname", ""),\n'
         '                "hwid": get_hwid()}\n\n'
         '    def auth_status(self) -> dict:\n'
         '        verified = bool(_free_verified())\n'
-        '        stale = bool((not verified) and _free_verified_raw())\n'
+        '        raw = _free_verified_raw()\n'
+        '        stale = bool((not verified) and raw)\n'
         '        return {"ok": True, "authorized": False, "dev_mode": False,\n'
         '                "free_build": True, "pro_qq": FREE_QQ, "free_verified": verified,\n'
         '                "free_verify_stale": stale,\n'
         '                "nickname": ("免费版" if not verified else\n'
-        '                             "训练家_" + (_free_verified().get("qq", "")[-4:])),\n'
+        '                             "训练家_" + (raw.get("qq", "")[-4:])),\n'
         '                "expires_at": 0}\n\n'
         '    def auth_activate(self, *a, **k):\n'
         '        return {"ok": False, "free_build": True,\n'
@@ -857,42 +874,78 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
     window.authClick = function () {
         freeVerifyFlow();
     };
-    // ---- 入群验证弹层(QQ号 + 群口令双输入, customModal 单框不敷用, 自建轻量层) ----
+    // ---- 入群验证弹层(QQ号 + 群口令双输入; 复用主仓 custom-modal-panel 体系样式) ----
     var _freeVerifyOverlay = null;
     function freeVerifyEnsureOverlay() {
         if (_freeVerifyOverlay) return _freeVerifyOverlay;
         var ov = document.createElement('div');
         ov.className = 'custom-modal-overlay';
         ov.id = 'freeVerifyOverlay';
-        ov.innerHTML = '<div class="custom-modal" style="max-width:340px">'
-            + '<h3>入群验证</h3>'
-            + '<p style="font-size:12px;opacity:.75;line-height:1.7">PVP 实时识别需要完成免费的入群验证。<br>'
+        ov.innerHTML = '<div class="custom-modal-panel" style="width:360px">'
+            + '<div class="custom-modal-head"><h3>入群验证</h3>'
+            + '<button class="custom-modal-close" id="freeVfClose">×</button></div>'
+            + '<div class="custom-modal-body">'
+            + '<p>PVP 实时识别需要完成免费的入群验证。<br>'
             + 'QQ 号用于绑定本机(一号一机), 群口令见 QQ 群公告。</p>'
+            + '<div id="freeVfTip" style="display:none;margin-top:8px;padding:7px 10px;border-radius:8px;'
+            + 'font-size:11.5px;line-height:1.6;color:#fde68a;background:rgba(245,158,11,.12);'
+            + 'border:1px solid rgba(245,158,11,.35)"></div>'
+            + '<div id="freeVfErr" style="display:none;margin-top:8px;padding:7px 10px;border-radius:8px;'
+            + 'font-size:11.5px;line-height:1.6;color:#fca5a5;background:rgba(239,68,68,.12);'
+            + 'border:1px solid rgba(239,68,68,.4)"></div>'
             + '<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">'
-            + '<input type="text" id="freeVfQq" class="form-input" placeholder="QQ 号" maxlength="12" autocomplete="off">'
-            + '<input type="text" id="freeVfKey" class="form-input" placeholder="QQ 群口令(见群公告)" autocomplete="off">'
-            + '</div>'
-            + '<div class="custom-modal-actions" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
+            + '<input type="text" id="freeVfQq" class="form-input custom-modal-input" placeholder="QQ 号" maxlength="12" autocomplete="off">'
+            + '<input type="text" id="freeVfKey" class="form-input custom-modal-input" placeholder="QQ 群口令(见群公告)" autocomplete="off">'
+            + '</div></div>'
+            + '<div class="custom-modal-foot">'
             + '<button class="btn btn-ghost" id="freeVfCancel">取消</button>'
             + '<button class="btn btn-primary" id="freeVfGo">验证</button>'
             + '</div></div>';
         document.body.appendChild(ov);
         _freeVerifyOverlay = ov;
         ov.querySelector('#freeVfCancel').onclick = function () { ov.classList.remove('show'); };
+        ov.querySelector('#freeVfClose').onclick = function () { ov.classList.remove('show'); };
         ov.onclick = function (e) { if (e.target === ov) ov.classList.remove('show'); };
         return ov;
+    }
+    function freeVfShowErr(ov, msg, level) {
+        var errEl = ov.querySelector('#freeVfErr');
+        if (errEl) {
+            errEl.textContent = msg;
+            errEl.style.display = 'block';
+            errEl.style.color = level === 'warning' ? '#fde68a' : '#fca5a5';
+            errEl.style.background = level === 'warning' ? 'rgba(245,158,11,.12)' : 'rgba(239,68,68,.12)';
+            errEl.style.borderColor = level === 'warning' ? 'rgba(245,158,11,.35)' : 'rgba(239,68,68,.4)';
+        }
+        if (window.showToast) showToast(msg, level || 'error');
     }
     async function freeVerifyFlow() {
         var ov = freeVerifyEnsureOverlay();
         var qqEl = ov.querySelector('#freeVfQq'), keyEl = ov.querySelector('#freeVfKey');
-        qqEl.value = ''; keyEl.value = '';
+        var errEl = ov.querySelector('#freeVfErr'), tipEl = ov.querySelector('#freeVfTip');
+        // 每次打开都重查验证态: 已验证不打扰; 曾验证则预填 QQ + 过期提示
+        var st = null;
+        try { st = await pywebview.api.free_verify_status(); } catch (e) { /* web 模式无桩 */ }
+        if (st && st.verified) {
+            if (window.showToast) showToast('本机已通过入群验证, 无需重复验证', 'success');
+            return;
+        }
+        errEl.style.display = 'none'; tipEl.style.display = 'none';
+        keyEl.value = '';
+        qqEl.value = (st && st.last_qq) || '';
+        if (st && st.verify_stale) {
+            tipEl.textContent = '上次验证已过期(有效期 ' + (st.ttl_days || 30) + ' 天), '
+                + 'QQ 号已帮你填好, 重新输入当前群口令即可';
+            tipEl.style.display = 'block';
+        }
         ov.classList.add('show');
-        setTimeout(function () { qqEl.focus(); }, 60);
+        setTimeout(function () { (qqEl.value ? keyEl : qqEl).focus(); }, 60);
         var goBtn = ov.querySelector('#freeVfGo');
         goBtn.onclick = async function () {
             var qq = qqEl.value.trim(), key = keyEl.value.trim();
-            if (!/^\d{5,12}$/.test(qq)) { if (window.showToast) showToast('请填写正确的 QQ 号', 'warning'); return; }
-            if (!key) { if (window.showToast) showToast('请填写群口令(见 QQ 群公告)', 'warning'); return; }
+            errEl.style.display = 'none';
+            if (!/^\d{5,12}$/.test(qq)) { freeVfShowErr(ov, '请填写正确的 QQ 号', 'warning'); return; }
+            if (!key) { freeVfShowErr(ov, '请填写群口令(见 QQ 群公告)', 'warning'); return; }
             goBtn.disabled = true; goBtn.textContent = '验证中…';
             try {
                 var r = await pywebview.api.free_verify_group(qq, key);
@@ -900,12 +953,13 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                     ov.classList.remove('show');
                     if (window.showToast) showToast(r.message || '验证通过', 'success');
                     window.FREE_VERIFIED = true;
+                    window.FREE_VERIFY_STALE = false;
                     if (window.freeApplyVerifyUI) freeApplyVerifyUI(true);
                 } else {
-                    if (window.showToast) showToast((r && r.message) || '验证失败', 'error');
+                    freeVfShowErr(ov, (r && r.message) || '验证失败: 口令不匹配或服务不可达, 请核对群公告后重试', 'error');
                 }
             } catch (e) {
-                if (window.showToast) showToast('验证异常: ' + e, 'error');
+                freeVfShowErr(ov, '验证异常: ' + e, 'error');
             }
             goBtn.disabled = false; goBtn.textContent = '验证';
         };
@@ -913,18 +967,21 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
         qqEl.onkeydown = function (e) { if (e.key === 'Enter') keyEl.focus(); };
     }
     window.freeVerifyFlow = freeVerifyFlow;
-    // ---- isAuthed 语义对齐免费版: 已通过入群验证 = 已授权 ----
+    // ---- isAuthed 语义对齐免费版: 通过过入群验证 = 已授权 ----
     // (主仓 isAuthed 读 authState.authorized, 免费树无 auth 体系恒 false →
-    //  PVP 预设保存/图鉴训练卡全被「登录后可保存」卡死; 改读 FREE_VERIFIED)
+    //  PVP 预设保存/图鉴训练卡全被「登录后可保存」卡死; 改读验证态)
+    // 过期不连坐保存类: FREE_VERIFY_STALE(曾验证但过期)也算已授权 —
+    // 过期只重锁抓包识别类功能(后端 _free_gate 管), 保存类免费功能照常可用。
     // 注: 付费页(auto/aipvp/daily)拦截由 FREE freeNav 的 onclick 覆写兜底,
     //     不依赖 isAuthed — 因此此处放开不会误开付费功能。
     Object.defineProperty(window, "isAuthed", {
         get: function () {
-            return function () { return !!window.FREE_VERIFIED; };
+            return function () { return !!(window.FREE_VERIFIED || window.FREE_VERIFY_STALE); };
         },
         configurable: true,
     });
     // ---- PVP 页锁幕: 未验证盖"入群验证"引导(后端 _free_gate 同步硬闸) ----
+    // 过期重验 vs 从未验证文案区分; 点按钮走 freeVerifyFlow(QQ 号自动预填)
     window.freeApplyVerifyUI = function (verified) {
         var page = document.getElementById('page-pvp');
         if (!page) return;
@@ -935,14 +992,28 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
             if (sub) sub.innerHTML = '<span class="auth-exp">已验证 · 感谢支持正版</span>';
             return;
         }
-        if (veil) return;
+        var stale = !!window.FREE_VERIFY_STALE;
+        if (veil) {
+            // 已有锁幕但状态切换(如从未验证→已过期): 刷新文案
+            var t = veil.querySelector('.av-title'), d = veil.querySelector('.av-desc');
+            if (t) t.textContent = stale ? '入群验证已过期' : 'PVP 识别需要入群验证';
+            if (d) d.innerHTML = stale
+                ? '上次验证已过期(有效期 ' + (window.FREE_VERIFY_TTL || 30) + ' 天), 重新输入当前群口令即可<br>QQ 号已记住了, 点下面按钮自动填好 · 口令见 QQ 群公告'
+                : '验证完全免费: 输入 QQ 号 + 群口令即可<br>口令见 QQ 群公告 · 一号绑定一机 · 本机数据不上传';
+            var vb = veil.querySelector('.av-box .btn');
+            if (vb) vb.textContent = stale ? '重新验证 (免费)' : '立即验证 (免费)';
+            return;
+        }
         veil = document.createElement('div');
         veil.className = 'auth-veil free-verify-veil';
         veil.innerHTML = '<div class="av-box">'
             + '<div class="av-icon">' + (window.icon ? icon('lock', 36) : '') + '</div>'
-            + '<div class="av-title">PVP 识别需要入群验证</div>'
-            + '<div class="av-desc">验证完全免费: 输入 QQ 号 + 群口令即可<br>口令见 QQ 群公告 · 一号绑定一机 · 本机数据不上传</div>'
-            + '<button class="btn btn-primary" onclick="freeVerifyFlow()">立即验证</button></div>';
+            + '<div class="av-title">' + (stale ? '入群验证已过期' : 'PVP 识别需要入群验证') + '</div>'
+            + '<div class="av-desc">' + (stale
+                ? '上次验证已过期(有效期 ' + (window.FREE_VERIFY_TTL || 30) + ' 天), 重新输入当前群口令即可<br>QQ 号已记住了, 点下面按钮自动填好 · 口令见 QQ 群公告'
+                : '验证完全免费: 输入 QQ 号 + 群口令即可<br>口令见 QQ 群公告 · 一号绑定一机 · 本机数据不上传')
+            + '</div>'
+            + '<button class="btn btn-primary" onclick="freeVerifyFlow()">' + (stale ? '重新验证 (免费)' : '立即验证 (免费)') + '</button></div>';
         page.appendChild(veil);
     };
     // 启动时查验证态: 未验证 → pvp 页上锁 + 头像提示"点击验证"
@@ -953,15 +1024,16 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                     var ok = !!(st && st.verified);
                     window.FREE_VERIFIED = ok;
                     window.FREE_VERIFY_STALE = !!(st && st.verify_stale);
+                    window.FREE_VERIFY_TTL = (st && st.ttl_days) || 30;
                     if (window.freeApplyVerifyUI) freeApplyVerifyUI(ok);
                     if (!ok) {
                         var sub = document.getElementById('authState');
                         var box = document.getElementById('authAvatarBox');
                         if (window.FREE_VERIFY_STALE) {
-                            // 超过 7 天: 温和提示重验(不强制弹窗, 其余功能不受影响)
+                            // 过期: 温和提示重验(不强制弹窗, 仅抓包识别类功能受影响)
                             if (sub) sub.innerHTML = '<span class="auth-exp">验证已过期 · 点击重新验证</span>';
-                            if (box) box.title = '入群验证超 7 天, 点击重新验证(免费)';
-                            if (window.showToast) showToast('入群验证已超 7 天, 点左上角头像重新验证(群口令见群公告)', 'warning', 8000);
+                            if (box) box.title = '入群验证已过期, 点击重新验证(免费, QQ 号自动预填)';
+                            if (window.showToast) showToast('入群验证已过期(有效期 ' + window.FREE_VERIFY_TTL + ' 天), 需要时点左上角头像重验, QQ 号会自动填好', 'warning', 8000);
                         } else {
                             if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
                             if (box) box.title = '点击完成入群验证(免费)';
@@ -988,7 +1060,7 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                     if (box) box.title = '已通过入群验证';
                 } else if (window.FREE_VERIFY_STALE) {
                     if (sub) sub.innerHTML = '<span class="auth-exp">验证已过期 · 点击重新验证</span>';
-                    if (box) box.title = '入群验证超 7 天, 点击重新验证(免费)';
+                    if (box) box.title = '入群验证已过期, 点击重新验证(免费, QQ 号自动预填)';
                 } else {
                     if (sub) sub.innerHTML = '<span class="auth-exp">未验证 · 点击验证</span>';
                     if (box) box.title = '点击完成入群验证(免费)';
@@ -1162,6 +1234,25 @@ def apply_inject_patches(out_root: Path) -> None:
         print(f"[sync_free] 注入补丁 OK: {why} ({rel}, x{n})")
 
 
+def _strip_free_scripts(html: str) -> str:
+    """剥掉 index.html 里残留的 FREE_BUILD 内联脚本块(整块移除)。
+
+    主仓 index.html 曾被旧版免费补丁整块污染并误提交; 注入幂等守卫见到
+    'FREE_BUILD' 字样就跳过, 导致 dist 永远拿不到新版 FREE 脚本。此处把
+    含 FREE BUILD 标记的 <script>...</script> 整块剥掉, 再重新注入最新版。
+    同时剥掉散落的 FREE 行内注释锚点不影响(那些是 SOURCE_PATCHES 的目标行,
+    属于主仓源码正常补丁, 不在 <script> 整块内)。"""
+    import re as _re
+
+    def _is_free_block(m: "_re.Match") -> str:
+        return "" if "[FREE BUILD]" in m.group(1) or "window.FREE_BUILD" in m.group(1) else m.group(0)
+
+    stripped = _re.sub(r"<script>(.*?)</script>", _is_free_block, html, flags=_re.S)
+    if stripped != html:
+        print("[sync_free] 剥离残留 FREE 脚本块(主仓污染) → 将注入最新版")
+    return stripped
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="从主仓生成免费版代码树")
     ap.add_argument("--main", required=True, help="主仓根目录")
@@ -1238,12 +1329,15 @@ def main() -> None:
     apply_source_patches(main_root, out_root)
 
     # 前端补丁: index.html 标题 + 注入 FREE_BUILD 脚本(</body> 前)
+    # 注入前先剥掉残留的 FREE 脚本块(主仓 index.html 曾被旧版免费补丁污染并
+    # 误提交, 幂等守卫 "FREE_BUILD not in html" 见到残留就跳过 → dist 永远
+    # 拿不到新版补丁)。剥干净再注入, 保证免费树始终带最新版 FREE 脚本。
     idx_html = out_root / "src" / "gui" / "web" / "index.html"
     if idx_html.exists():
         html = idx_html.read_text(encoding="utf-8")
         html = html.replace("洛克王国 · PVP 助手控制台", "洛克小助手 · Free 控制台")
-        if "FREE_BUILD" not in html:
-            html = html.replace("</body>", FREE_PATCH_HTML.replace("FREE_QQ_PLACEHOLDER", FREE_QQ) + "\n</body>", 1)
+        html = _strip_free_scripts(html)
+        html = html.replace("</body>", FREE_PATCH_HTML.replace("FREE_QQ_PLACEHOLDER", FREE_QQ) + "\n</body>", 1)
         idx_html.write_text(html, encoding="utf-8")
         print("[sync_free] 前端补丁 OK: index.html")
 
