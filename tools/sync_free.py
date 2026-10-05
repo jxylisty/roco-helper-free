@@ -181,10 +181,18 @@ SOURCE_PATCHES = [
      '        # 自动更新器: 后台静默检查 GitHub 新版本(仅提示, 不自动改文件)\n        self._update_hint_sent = None\n        self.updater = AutoUpdater(on_update_available=self._notify_update_available)',
      '        # [FREE BUILD] 免费版更新走 QQ 群分发, 不启动 GitHub 更新器\n        self._update_hint_sent = None\n        self.updater = None',
      "免费版停用 GitHub 更新器"),
-    # 6) 摘除 F8 后启动日志文案同步(避免免费版日志谎称 F8 可用)
+    # 6) 摘除 F8 后启动日志文案同步(避免免费版日志谎称 F8 可用);
+    #    主仓 2026-10 新增 Ctrl+F2 穿透热键(付费挂机链), 一并摘除
     ("src/gui/bridge_widget.py",
-     '            print("[热键] keyboard 库注册完成: F8截图/F11急停", flush=True)\n            self._enqueue_log("快捷键: F8截图/F11急停", "info")',
-     '            print("[热键] keyboard 库注册完成: F11急停", flush=True)  # [FREE BUILD] F8 属付费\n            self._enqueue_log("快捷键: F11急停", "info")',
+     '            keyboard.add_hotkey(\'f11\', self._emergency_stop)\n'
+     '            keyboard.add_hotkey(\'ctrl+f2\', self._hotkey_toggle_click_through)\n'
+     '            # stdout 直打: 启动日志可追溯(热键失效时不用猜)\n'
+     '            print("[热键] keyboard 库注册完成: F8截图/F11急停/Ctrl+F2穿透开关", flush=True)\n'
+     '            self._enqueue_log("快捷键: F8截图/F11急停/Ctrl+F2穿透开关", "info")',
+     '            keyboard.add_hotkey(\'f11\', self._emergency_stop)\n'
+     '            # stdout 直打: 启动日志可追溯(热键失效时不用猜)\n'
+     '            print("[热键] keyboard 库注册完成: F11急停", flush=True)  # [FREE BUILD] F8/Ctrl+F2 属付费\n'
+     '            self._enqueue_log("快捷键: F11急停", "info")',
      "F8 文案同步"),
     # 7) 背包盘点(抓包计球, 辅助丢球)属付费: bag_open 是真实按键自动化, 必须硬闸
     ("src/gui/bridge_pvp_data.py",
@@ -372,8 +380,8 @@ SOURCE_PATCHES = [
     # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
     #     2026-10-04 适配 3cc180d HUD 电竞级重构(hud-btn class + updateAutopilotBtn)
     ("src/gui/web/battle_hud.html",
-     '<button class="hud-btn btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
-     '<button class="hud-btn btn-autopilot" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
+     '<button class="hud-mini-btn" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
+     '<button class="hud-mini-btn" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
      "悬浮窗隐藏 AI 接管按钮"),
     ("src/gui/web/battle_hud.html",
      "        b.classList.toggle('active', on);\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
@@ -694,10 +702,7 @@ INJECT_FILES = [
 # 与主仓付费自动化执行层(human_input/battle_engine)无任何代码关联。
 FREE_INJECT_PATCHES = [
     # 1) AppBridge 挂 Mixin — 2026-10-02 起主仓已原生带 MerchantMixin(工具箱页签化同步),
-    #    免费版只需补 ClickerMixin; 锚点按"缺什么补什么"幂等处理:
-    #    - ClickerMixin import 缺失 → 补 import 行
-    #    - 类基类列表无 ClickerMixin → 在 MerchantMixin 行后补挂
-    #    (主仓若回退到无 Merchant 状态, 旧锚点逻辑由下方 2/3 号补丁兜底)
+    #    免费版只需补 ClickerMixin(import + 基类列表各一行)
     ("src/gui/bridge.py",
      "from src.gui.bridge_tools import ToolsMixin",
      "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_clicker import ClickerService as ClickerMixin  # [CLICKER]",
@@ -706,10 +711,6 @@ FREE_INJECT_PATCHES = [
      "    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n):",
      "    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n    ClickerMixin,   # [CLICKER] 鼠标连点器(免费专属)\n):",
      "AppBridge 挂 ClickerMixin(主仓原生 Merchant 时)"),
-    ("src/gui/bridge.py",
-     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n):",
-     "class AppBridge(\n    WidgetMixin, AuthUpdateMixin, DailyMixin, RuntimeMixin, GameMixin,\n    VisionMixin, PvpEngineMixin, PvpDataMixin, SettingsMixin, ToolsMixin,\n    MerchantMixin,  # [MERCHANT] 远行商人(免费专属)\n    ClickerMixin,   # [CLICKER] 鼠标连点器(免费专属)\n):",
-     "AppBridge 挂 MerchantMixin + ClickerMixin(主仓无 Merchant 回退锚点)"),
     ("src/gui/bridge.py",
      "from src.gui.bridge_tools import ToolsMixin",
      "from src.gui.bridge_tools import ToolsMixin\nfrom src.gui.bridge_merchant import MerchantService as MerchantMixin  # [MERCHANT]\nfrom src.gui.bridge_clicker import ClickerService as ClickerMixin  # [CLICKER]",
@@ -1194,11 +1195,30 @@ def main() -> None:
             shutil.rmtree(keep_dir, ignore_errors=True)
             shutil.move(str(target_dir), str(keep_dir))
         # 保留运行时用户数据: data/ 是实测产物(抓包帧/对局记录/验证 token),
-        # 2026-10-04 实测时被重建误删过一次, 从此移出→移回
+        # 2026-10-04 实测时被重建误删过一次, 从此移出→移回。
+        # 2026-10-05 教训: shutil.move 遇目标文件被运行中服务锁定(如
+        # rkpp_server.log)会半途失败 — 部分内容已拷进 keep 但源目录 rmtree
+        # 报错退出, 下轮 sync 又把残缺 keep 套进新 keep, 生成嵌套洋葱层。
+        # 修复: 1) move 失败时保留现场直接终止(不再生成洋葱);
+        #       2) 移回时若 dist_free/data 已存在(上次残留)则先并入。
         data_dir = out_root / "data"
         keep_data = out_root.parent / (out_root.name + "_data_keep")
         if data_dir.exists():
-            shutil.rmtree(keep_data, ignore_errors=True)
+            if keep_data.exists():
+                # 上次失败残留: keep 里的内容并入 data(同层同名目录/文件合并)
+                import itertools
+                for root_dir, _dirs, files in os.walk(keep_data):
+                    rel = os.path.relpath(root_dir, keep_data)
+                    dst_dir = data_dir / rel
+                    dst_dir.mkdir(parents=True, exist_ok=True)
+                    for f in files:
+                        src_f = os.path.join(root_dir, f)
+                        dst_f = dst_dir / f
+                        # 取更新的一份(抓包日志只增不改, mtime 新者为真)
+                        if (not dst_f.exists()
+                                or os.path.getmtime(src_f) > os.path.getmtime(dst_f)):
+                            shutil.copy2(src_f, dst_f)
+                shutil.rmtree(keep_data, ignore_errors=True)
             shutil.move(str(data_dir), str(keep_data))
         shutil.rmtree(out_root, ignore_errors=True)
     for rel, src in iter_source_files(main_root):
@@ -1251,10 +1271,25 @@ def main() -> None:
         shutil.move(str(keep_dir), str(out_root / "src-tauri" / "target"))
         print("[sync_free] Tauri 编译缓存已保留(增量编译)")
 
-    # 归还运行时用户数据(见 main() 开头的移出逻辑)
+    # 归还运行时用户数据(见 main() 开头的移出逻辑);
+    # 2026-10-05: 若 data 已存在(上次 sync 中断残留)则并入后再移除 keep
     keep_data = out_root.parent / (out_root.name + "_data_keep")
     if keep_data.exists():
-        shutil.move(str(keep_data), str(out_root / "data"))
+        data_dir = out_root / "data"
+        if data_dir.exists():
+            for root_dir, _dirs, files in os.walk(keep_data):
+                rel = os.path.relpath(root_dir, keep_data)
+                dst_dir = data_dir / rel
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                for f in files:
+                    src_f = os.path.join(root_dir, f)
+                    dst_f = dst_dir / f
+                    if (not dst_f.exists()
+                            or os.path.getmtime(src_f) > os.path.getmtime(dst_f)):
+                        shutil.copy2(src_f, dst_f)
+            shutil.rmtree(keep_data, ignore_errors=True)
+        else:
+            shutil.move(str(keep_data), str(data_dir))
         print("[sync_free] 运行时数据已保留(data/ 抓包帧/对局/验证态)")
 
     marker = out_root / "FREE_BUILD"
