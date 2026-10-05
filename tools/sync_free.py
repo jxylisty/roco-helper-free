@@ -333,9 +333,10 @@ SOURCE_PATCHES = [
      '            from src.gui import auth\n'
      '            st = auth.status()\n',
      "健康检查账户状态改读入群验证态(免 auth 模块)"),
-    # 16) 健康检查「按键驱动」探针: interception 驱动只服务付费丢球/挂机,
-    #     免费版唯一输入功能=连点器(user32.SendInput 系统原生, 无需驱动)。
-    #     免费用户没装驱动时这项恒 fail(红条)+引导装驱动 = 纯误导。改写为连点器自检。
+    # 16) 健康检查「按键驱动」探针: 2026-10-05 连点器已升级 interception 硬件级注入
+    #     (防游戏检测封号, 用户明确要求), 驱动重新变成免费版的真实依赖。
+    #     探针改写: 驱动在 → ok(硬件级注入); 驱动缺 → warn(非 fail):
+    #     连点器自动回退 SendInput 功能不中断, 但反作弊可见性下降, 引导安装。
     ("src/gui/bridge_health.py",
      '    def _probe_interception() -> dict:\n'
      '        """按键驱动: 键盘控制是否可用"""\n'
@@ -350,19 +351,20 @@ SOURCE_PATCHES = [
      '                "自动丢球/挂机需要此驱动: 请重新安装助手并允许驱动安装，"\n'
      '                "或右键以管理员身份运行一次")',
      '    def _probe_interception() -> dict:\n'
-     '        """[FREE BUILD] 按键驱动: 免费版无丢球/挂机, 改检连点器 SendInput 链路"""\n'
+     '        """[FREE BUILD] 输入驱动: 连点器硬件级注入(interception)检测。\n'
+     '        驱动缺位时连点器自动回退 SendInput(功能可用但防检测弱化)"""\n'
      '        try:\n'
-     '            import ctypes\n'
-     '            u32 = ctypes.windll.user32\n'
-     '            if not u32.SendInput:\n'
-     '                raise OSError("SendInput 不可用")\n'
-     '            return HealthMixin._mk("driver", "输入链路", "ok",\n'
-     '                                   "系统输入链路正常 (连点器就绪)")\n'
-     '        except Exception as e:\n'
+     '            from src.gui.bridge_clicker import interception_available\n'
+     '            if interception_available():\n'
+     '                return HealthMixin._mk("driver", "输入驱动", "ok",\n'
+     '                                       "Interception 驱动正常 (连点器硬件级注入, 防检测)")\n'
+     '            raise OSError("驱动未安装")\n'
+     '        except Exception:\n'
      '            return HealthMixin._mk(\n'
-     '                "driver", "输入链路", "fail", f"系统输入链路异常: {e}",\n'
-     '                "鼠标连点器依赖 Windows 原生输入, 异常极少见; 重启助手后重试")',
-     "健康检查按键驱动改连点器输入链路自检(免 interception)"),
+     '                "driver", "输入驱动", "warn", "Interception 驱动未安装 (连点器已回退兼容模式)",\n'
+     '                "连点器功能可用, 但硬件级防检测未生效; 建议安装 Interception 驱动 "\n'
+     '                "(github.com/oblitum/Interception) 后重启助手")',
+     "健康检查输入驱动改 interception 真实检测(回退 warn 非 fail)"),
     ("src/gui/web/assets/pvp.js",
      "{ ocr: 'OCR 识别', capture: '自研抓包', rkpp: '自研解码' }",
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",

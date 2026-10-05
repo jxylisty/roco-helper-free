@@ -2,10 +2,12 @@
 """bridge_clicker.py — 鼠标连点器 (免费版专属模块)
 
 定位: 工具箱页签内的纯前端参数面板 + 后端线程循环点击。
-执行层: ctypes 直调 user32.SendInput —— Windows 输入栈最底层的
-    硬件级注入(与真实鼠标事件同队列), 零第三方依赖, 不依赖
-    pyautogui/keyboard 等可选库。仅注入鼠标事件, 不含按键序列、
-    不含图像识别、不含自动决策 —— 与主仓付费自动化引擎无任何代码关联。
+执行层(2026-10-05 防检测升级): 优先 interception 内核级驱动注入 ——
+    与真实硬件鼠标事件同栈, 游戏反作弊无法与真实输入区分(用户明确要求,
+    SendInput 软件注入可被游戏识别有封号风险)。interception 不可用时
+    (用户未装驱动)自动回退 SendInput, 功能不中断但日志提示。
+仅注入鼠标事件, 不含按键序列、不含图像识别、不含自动决策 ——
+    与主仓付费自动化引擎无任何代码关联。
 
 能力:
   - 单点/双击/按下保持/右键/中键, CPS 精细调速(0.1 步进)
@@ -20,8 +22,15 @@ import threading
 import time
 from ctypes import wintypes
 
-# ---------------- SendInput 原生定义 ----------------
+# ---------------- interception 硬件级注入(优先) ----------------
+# 与付费版同库(interception-python 1.13.6, requirements 已含);
+# 驱动安装一次全局生效, 进程内延迟初始化(线程安全, 失败不重试)。
 
+_INTERCEPTION_READY = False
+_INTERCEPTION_TRIED = False
+_INTERCEPTION_LOCK = threading.Lock()
+
+# SendInput 原生定义(回退路径保留)
 MOUSEEVENTF_MOVE = 0x0001
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -57,8 +66,67 @@ class _INPUT(ctypes.Structure):
 _user32 = ctypes.windll.user32
 
 
+def _ensure_interception() -> bool:
+    """延迟初始化 interception(进程内一次); 失败置 False 走 SendInput 回退"""
+    global _INTERCEPTION_READY, _INTERCEPTION_TRIED
+    if _INTERCEPTION_READY:
+        return True
+    if _INTERCEPTION_TRIED:
+        return False
+    with _INTERCEPTION_LOCK:
+        if _INTERCEPTION_TRIED:
+            return _INTERCEPTION_READY
+        _INTERCEPTION_TRIED = True
+        try:
+            import interception
+            if not getattr(interception, "_devices_captured", False):
+                interception.auto_capture_devices(keyboard=False, mouse=True)
+                interception._devices_captured = True
+            _INTERCEPTION_READY = True
+        except Exception:
+            _INTERCEPTION_READY = False
+    return _INTERCEPTION_READY
+
+
+def interception_available() -> bool:
+    """健康探针/前端状态用: 驱动是否真的可用(触发延迟初始化)"""
+    return _ensure_interception()
+
+
+def _send_mouse_interception(flags: int, x: int = 0, y: int = 0) -> None:
+    """interception 路径: 绝对像素坐标 → move_to + 按键事件"""
+    import interception
+    if x is not None:
+        interception.move_to(int(x), int(y))
+    if flags & MOUSEEVENTF_LEFTDOWN:
+        interception.mouse_down("left")
+    if flags & MOUSEEVENTF_LEFTUP:
+        interception.mouse_up("left")
+    if flags & MOUSEEVENTF_RIGHTDOWN:
+        interception.mouse_down("right")
+    if flags & MOUSEEVENTF_RIGHTUP:
+        interception.mouse_up("right")
+    if flags & MOUSEEVENTF_MIDDLEDOWN:
+        interception.mouse_down("middle")
+    if flags & MOUSEEVENTF_MIDDLEUP:
+        interception.mouse_up("middle")
+
+
 def _send_mouse(flags: int, x: int = 0, y: int = 0) -> None:
-    """发送一组鼠标输入事件; 绝对坐标用像素(x,y 传 None 表示相对/纯按钮事件)"""
+    """发送一组鼠标输入事件; x/y=None 表示纯按钮事件(沿用既有坐标)。
+    interception 可用走硬件级注入(防检测), 否则回退 SendInput。"""
+    if _ensure_interception():
+        try:
+            _send_mouse_interception(flags, x, y)
+            return
+        except Exception:
+            # 运行中驱动抽风(极少见): 本事件回退 SendInput, 不中断连点
+            pass
+    _send_mouse_sendinput(flags, x, y)
+
+
+def _send_mouse_sendinput(flags: int, x: int = 0, y: int = 0) -> None:
+    """SendInput 回退路径(原实现)"""
     inp = _INPUT(type=INPUT_MOUSE)
     if x is not None:
         vx = int(x * _COORD_NORM / max(1, _user32.GetSystemMetrics(0)))
