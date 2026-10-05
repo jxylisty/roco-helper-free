@@ -912,6 +912,17 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
         qqEl.onkeydown = function (e) { if (e.key === 'Enter') keyEl.focus(); };
     }
     window.freeVerifyFlow = freeVerifyFlow;
+    // ---- isAuthed 语义对齐免费版: 已通过入群验证 = 已授权 ----
+    // (主仓 isAuthed 读 authState.authorized, 免费树无 auth 体系恒 false →
+    //  PVP 预设保存/图鉴训练卡全被「登录后可保存」卡死; 改读 FREE_VERIFIED)
+    // 注: 付费页(auto/aipvp/daily)拦截由 FREE freeNav 的 onclick 覆写兜底,
+    //     不依赖 isAuthed — 因此此处放开不会误开付费功能。
+    Object.defineProperty(window, "isAuthed", {
+        get: function () {
+            return function () { return !!window.FREE_VERIFIED; };
+        },
+        configurable: true,
+    });
     // ---- PVP 页锁幕: 未验证盖"入群验证"引导(后端 _free_gate 同步硬闸) ----
     window.freeApplyVerifyUI = function (verified) {
         var page = document.getElementById('page-pvp');
