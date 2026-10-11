@@ -164,9 +164,17 @@ SOURCE_PATCHES = [
      '                pvpEngineRunning = true;',
      "pvp.js 引擎启动失败弹验证引导"),
     # 2c) MCP 自玩按键注入补闸(pvp_act 无鉴权直通 human_input; human_input 已排除)
+    # 2026-10-10 同步主仓签名扩展(wait_echo/sync 参数), 锚点跟随更新
     ("src/gui/bridge_pvp_data.py",
-     '    def pvp_act(self, action: str, delay: float = None) -> dict:\n        """执行一条 PVP 操作命令',
-     '    def pvp_act(self, action: str, delay: float = None) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] MCP 自玩为付费功能\n        if gate:\n            return gate\n        """执行一条 PVP 操作命令',
+     '    def pvp_act(self, action: str, delay: float = None, wait_echo: bool = False,\n'
+     '                sync: bool = False) -> dict:\n'
+     '        """执行一条 PVP 操作命令',
+     '    def pvp_act(self, action: str, delay: float = None, wait_echo: bool = False,\n'
+     '                sync: bool = False) -> dict:\n'
+     '        gate = self._auth_gate()  # [FREE BUILD] MCP 自玩为付费功能\n'
+     '        if gate:\n'
+     '            return gate\n'
+     '        """执行一条 PVP 操作命令',
      "pvp_act 补闸门"),
     # 3) 窗口级 F8 截图热键同样指向付费调试链路, 摘除
     ("src/gui/bridge_widget.py",
@@ -283,11 +291,12 @@ SOURCE_PATCHES = [
      '        # 2026-10-04 修正: 此前误接 capture 源 — 那是半成品适配器(精灵名/血量"待补"),\n'
      '        # 表现为对局 vs未知+无战报。rkpp 依赖: 项目同级 rkpp_ref/(rkpp_live_tools.py + Key/latest.key)',
      "数据源固定 rkpp(全帧解码, 与付费版一致)"),
-    ("src/gui/bridge_pvp.py",
+    # 2026-10-10 主仓拆分: 抓包子系统方法搬入 bridge_pvp_source.py(PvpSourceMixin)
+    ("src/gui/bridge_pvp_source.py",
      '"抓包子系统已启动(同构数据源)"',
      '"实时数据通道已启动"',
      "日志改口: 子系统启动"),
-    ("src/gui/bridge_pvp.py",
+    ("src/gui/bridge_pvp_source.py",
      '"抓包子系统启动失败: {e}"',
      '"实时数据通道启动失败: {e}"',
      "日志改口: 子系统失败"),
