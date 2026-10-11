@@ -391,18 +391,28 @@ SOURCE_PATCHES = [
      "前端数据源标签改口"),
     # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
     #     2026-10-04 适配 3cc180d HUD 电竞级重构(hud-btn class + updateAutopilotBtn)
+    #     2026-10-11 适配主仓 battle_hud 拆分(HTML/CSS/JS 三文件):
+    #     - 按钮本体仍在 HTML, 锚点不变
+    #     - updateAutopilotBtn 的 toggle 两行随内联 JS 抽入 assets/battle_hud.js → 路径改指 .js
+    #     - 军师空态文案原有 1 锚点打 2 处(HTML 默认值 + JS sigRender 渲染值);
+    #       拆分后分居两文件, 必须拆成两条锚点各改各的 —— 否则 count 从 2 变 1
+    #       会"同步成功但 JS 那份漏改"(静默半应用, 免费版残留付费引导文案)
     ("src/gui/web/battle_hud.html",
      '<button class="hud-mini-btn" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
      '<button class="hud-mini-btn" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
      "悬浮窗隐藏 AI 接管按钮"),
-    ("src/gui/web/battle_hud.html",
+    ("src/gui/web/assets/battle_hud.js",
      "        b.classList.toggle('active', on);\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
      "        b.classList.toggle('active', on);\n        b.style.display = 'none';  // [FREE BUILD] AI 接管属付费, 状态刷新也保持隐藏\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
      "接管按钮状态刷新保持隐藏"),
     ("src/gui/web/battle_hud.html",
      '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
      'AI 军师建议对免费版完整可用',
-     "军师空态文案去接管引导(HTML+JS默认值)"),
+     "军师空态文案去接管引导(HTML 默认值)"),
+    ("src/gui/web/assets/battle_hud.js",
+     '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
+     'AI 军师建议对免费版完整可用',
+     "军师空态文案去接管引导(JS 渲染值, sigRender)"),
     # 11) toast 置顶: 验证弹窗遮罩(custom-modal-overlay)同为 9999 且 DOM 靠后,
     #     失败 toast 被盖在 80% 不透明毛玻璃下 = 用户眼里"验证失败没提示"
     ("src/gui/web/assets/app.css",
