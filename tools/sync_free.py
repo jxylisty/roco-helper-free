@@ -220,7 +220,8 @@ SOURCE_PATCHES = [
      "bag_open_and_scan 补闸门"),
     # 8) 锁幕选择器与拆分线对齐: 主仓锁 pvp/aipvp/daily, 免费版 pvp 是噱头必须放开,
     #    只锁 aipvp+daily
-    ("src/gui/web/assets/app.js",
+    #    2026-10-11 主仓 app.js 六文件拆分: 该锚点随"账户登录区/VIP"落入 app_auth.js
+    ("src/gui/web/assets/app_auth.js",
      "    document.querySelectorAll('#page-pvp, #page-aipvp, #page-daily').forEach(page => {",
      "    document.querySelectorAll('#page-aipvp, #page-daily').forEach(page => {  // [FREE BUILD] pvp 免费",
      "锁幕选择器对齐拆分线(pvp 摘除)"),
@@ -242,7 +243,8 @@ SOURCE_PATCHES = [
      '<button class="nav-item" data-page="pvp" onclick="switchPage(\'pvp\')">',
      '<button class="nav-item active" data-page="pvp" onclick="switchPage(\'pvp\')">',
      "默认导航高亮置为 pvp"),
-    ("src/gui/web/assets/app.js",
+    # 2026-10-11 主仓 app.js 六文件拆分: 该锚点随"运行模式"落入 app_auth.js
+    ("src/gui/web/assets/app_auth.js",
      "            if (document.querySelector('#page-vision.active')) switchPage('throw');",
      "            if (document.querySelector('#page-auto.active')) switchPage('pvp');  // [FREE BUILD]",
      "用户模式回退跳转改 pvp"),
@@ -1360,8 +1362,9 @@ def main() -> None:
         idx_html.write_text(html, encoding="utf-8")
         print("[sync_free] 前端补丁 OK: index.html")
 
-    # 导航付费清单改写: app.js 的 NAV_PAID_PAGES 与拆分线保持一致
-    app_js = out_root / "src" / "gui" / "web" / "assets" / "app.js"
+    # 导航付费清单改写: NAV_PAID_PAGES 与拆分线保持一致
+    # 2026-10-11 主仓 app.js 六文件拆分: 常量随"侧边栏导航排序"落入 app_auth.js
+    app_js = out_root / "src" / "gui" / "web" / "assets" / "app_auth.js"
     if app_js.exists():
         js = app_js.read_text(encoding="utf-8")
         old = "const NAV_PAID_PAGES = ['pvp', 'aipvp', 'daily'];"
@@ -1369,11 +1372,11 @@ def main() -> None:
         if js.count(old) == 1:
             js = js.replace(old, new)
             app_js.write_text(js, encoding="utf-8")
-            print("[sync_free] 前端补丁 OK: app.js NAV_PAID_PAGES")
+            print("[sync_free] 前端补丁 OK: app_auth.js NAV_PAID_PAGES")
         elif "[FREE BUILD]" in js:
-            print("[sync_free] 前端补丁跳过: app.js 已含 FREE 标记")
+            print("[sync_free] 前端补丁跳过: app_auth.js 已含 FREE 标记")
         else:
-            raise SystemExit("[sync_free] app.js 锚点失效: NAV_PAID_PAGES 未命中, 请核对主仓改动")
+            raise SystemExit("[sync_free] app_auth.js 锚点失效: NAV_PAID_PAGES 未命中, 请核对主仓改动")
 
     # 免费版已删除页面的前端 section/资源保留无妨(导航已拦), 但 pve 数据层不入树已由排除清单保证
 
