@@ -2,6 +2,11 @@
 # .ignore — 通用检索与 AI 工具屏蔽清单
 # ----------------------------------------------------
 
+# 白名单放行 dist_free 运行时树：它被 .gitignore 排除出 git（生成树不入库），
+# 但 .ignore 优先级高于 .gitignore，此行让 rg/AI 检索能看到全部运行时代码。
+# git 行为不受本文件影响。
+!dist_free/
+
 dist_free/src-tauri/target/
 src-tauri/target/
 **/assets/img/

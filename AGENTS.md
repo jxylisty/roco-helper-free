@@ -12,6 +12,12 @@
 - **端口约定**：免费版统一使用 **`127.0.0.1:17366`**（付费版为 `17365`，双端独立不冲突）。
 - **双仓流向**：主仓（闭源）为业务主干，本仓库通过 `python tools/sync_free.py --main <主仓> --out dist_free` 一键生成无污染的免费发布树。免费专属模块源码位于 `tools/free_inject/`。
 
+### ⚡ AI 检索约定（查功能慢/搜不到代码时先看这里）
+
+- **`dist_free/` 被 `.gitignore` 排除出 git，但已被根部 `.ignore` 用 `!dist_free/` 放行给 rg 系检索**。用 Grep/Glob 搜代码能直接命中 dist_free 运行树；若你的检索工具不认 `.ignore` 只认 git，请加 `--no-ignore-vcs` 或用 `rg`。
+- **改功能改哪份**：业务逻辑改 `tools/free_inject/`（免费专属）或主仓（付费/共用），然后跑 `sync_free.py` 重新生成 `dist_free/`；`dist_free/` 里的文件是生成产物，直接改会在下次同步时被覆盖。
+- **噪音已过滤**：根部与 `dist_free/` 的 `.ignore`/`.cursorignore` 已屏蔽图片素材（94MB webp/png）、巨型图鉴 JSON（pet_skills.json 等）、Rust 编译产物。检索结果里看不到它们是正常的；需要图鉴数据时用脚本/jq 查询，不要让 AI 通读。
+
 ---
 
 ## 2. 功能边界与防破解硬防线（AI 严禁跨越）
