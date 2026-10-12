@@ -165,7 +165,8 @@ SOURCE_PATCHES = [
      "pvp.js 引擎启动失败弹验证引导"),
     # 2c) MCP 自玩按键注入补闸(pvp_act 无鉴权直通 human_input; human_input 已排除)
     # 2026-10-10 同步主仓签名扩展(wait_echo/sync 参数), 锚点跟随更新
-    ("src/gui/bridge_pvp_data.py",
+    # 2026-10-11 主仓 bridge_pvp_data 拆 7 组: pvp_act 随出招操作组迁 bridge_pvp_act.py
+    ("src/gui/bridge_pvp_act.py",
      '    def pvp_act(self, action: str, delay: float = None, wait_echo: bool = False,\n'
      '                sync: bool = False) -> dict:\n'
      '        """执行一条 PVP 操作命令',
@@ -206,15 +207,16 @@ SOURCE_PATCHES = [
      '            self._enqueue_log("快捷键: F11急停", "info")',
      "F8 文案同步"),
     # 7) 背包盘点(抓包计球, 辅助丢球)属付费: bag_open 是真实按键自动化, 必须硬闸
-    ("src/gui/bridge_pvp_data.py",
+    # 2026-10-11 主仓 bridge_pvp_data 拆 7 组: 三个 bag_* 随背包组迁 bridge_pvp_bag.py
+    ("src/gui/bridge_pvp_bag.py",
      '    def bag_scan(self) -> dict:\n        """背包盘点: 优先协议直读',
      '    def bag_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """背包盘点: 优先协议直读',
      "bag_scan 补闸门"),
-    ("src/gui/bridge_pvp_data.py",
+    ("src/gui/bridge_pvp_bag.py",
      '    def bag_open(self) -> dict:\n        """置顶游戏',
      '    def bag_open(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包打开为付费自动化\n        if gate:\n            return gate\n        """置顶游戏',
      "bag_open 补闸门"),
-    ("src/gui/bridge_pvp_data.py",
+    ("src/gui/bridge_pvp_bag.py",
      '    def bag_open_and_scan(self) -> dict:\n        """打开背包',
      '    def bag_open_and_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """打开背包',
      "bag_open_and_scan 补闸门"),
