@@ -105,9 +105,10 @@ INCLUDE_FORCE_DIRS = [e for e in INCLUDE_FORCE if not e.endswith(".py")]
 # 每条: (文件, 旧文本, 新文本, 说明)。命中失败会报错退出, 防止静默漂移。
 SOURCE_PATCHES = [
     # 1) 免费版强制用户模式: DEV 页(视觉调试台)与开发者功能全隐藏
-    #    (主仓逻辑: 源码运行默认 dev; 打包才强制用户版 → 免费树是源码分发, 必须显式钉死)
+    #    (主仓逻辑 2026-10-24 起反转为默认安全: dev_mode.marker 不存在即用户版,
+    #     免费树本就无 marker; 此补丁仍显式钉死, 双保险防 marker 误入免费树)
     ("src/gui/bridge_common.py",
-     'if getattr(sys, "frozen", False):\n    DEV_MODE = False\nelse:\n    _env_dev = os.environ.get("LKW_DEV_MODE")\n    DEV_MODE = (_env_dev != "0")',
+     '_DEV_MARKER = PROJECT_ROOT / "data" / "config" / "dev_mode.marker"\nDEV_MODE = _DEV_MARKER.exists() and os.environ.get("LKW_DEV_MODE") != "0"',
      'DEV_MODE = False  # [FREE BUILD] 免费版强制用户模式: 隐藏视觉调试台等开发者入口',
      "钉死 DEV_MODE=False"),
     # 2) 付费丢球三开关补闸门: toggle_normal/bomber/skill 直调 tool 未走鉴权,
