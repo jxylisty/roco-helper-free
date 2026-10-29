@@ -307,7 +307,7 @@ SOURCE_PATCHES = [
      "日志改口: 子系统失败"),
     ("src/gui/bridge_pvp.py",
      '{"capture": "抓包", "rkpp": "RKPP 解码"}',
-     '{"capture": "实时", "rkpp": "实时"}',
+     '{"capture": "实时数据通道", "rkpp": "极速数据通道"}',
      "日志改口: 数据源标签(x2)"),
     ("src/gui/bridge_pvp.py",
      '"自研抓包源运行中"',
@@ -316,7 +316,7 @@ SOURCE_PATCHES = [
     ("src/gui/web/roster_bar.html",
      '对战中 · 阵容数据未同步（主控台数据源请选「自研抓包」）',
      '对战中 · 阵容数据未同步',
-     "阵容条文案去抓包指引"),
+     "阵容条文案去抓包指引"),  # 锚点已随主仓改口为「极速数据通道」, 仍命中
     # 14) 壁纸为付费特权(作者定义的软特权, 不弹窗不加锁): 免费版无入口、不应用壁纸
     ("src/gui/web/index.html",
      '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()">',
@@ -391,25 +391,14 @@ SOURCE_PATCHES = [
      '                "(github.com/oblitum/Interception) 后重启助手")',
      "健康检查输入驱动改 interception 真实检测(回退 warn 非 fail)"),
     ("src/gui/web/assets/pvp.js",
-     "{ ocr: 'OCR 识别', capture: '自研抓包', rkpp: '自研解码' }",
+     "{ ocr: '画面智能识别', capture: '实时数据通道', rkpp: '极速数据通道' }",
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",
-     "前端数据源标签改口"),
+     "前端数据源标签改口"),  # 2026-10-29 主仓统一白话数据源名, 锚点同步更新
     # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
     #     2026-10-04 适配 3cc180d HUD 电竞级重构(hud-btn class + updateAutopilotBtn)
     #     2026-10-11 适配主仓 battle_hud 拆分(HTML/CSS/JS 三文件):
-    #     - 按钮本体仍在 HTML, 锚点不变
-    #     - updateAutopilotBtn 的 toggle 两行随内联 JS 抽入 assets/battle_hud.js → 路径改指 .js
-    #     - 军师空态文案原有 1 锚点打 2 处(HTML 默认值 + JS sigRender 渲染值);
-    #       拆分后分居两文件, 必须拆成两条锚点各改各的 —— 否则 count 从 2 变 1
-    #       会"同步成功但 JS 那份漏改"(静默半应用, 免费版残留付费引导文案)
-    ("src/gui/web/battle_hud.html",
-     '<button class="hud-mini-btn" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招">',
-     '<button class="hud-mini-btn" id="btnAutopilot" onclick="toggleAutopilot()" title="AI 自动接管出招" style="display:none">  <!-- [FREE BUILD] AI 接管属付费 -->',
-     "悬浮窗隐藏 AI 接管按钮"),
-    ("src/gui/web/assets/battle_hud.js",
-     "        b.classList.toggle('active', on);\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
-     "        b.classList.toggle('active', on);\n        b.style.display = 'none';  // [FREE BUILD] AI 接管属付费, 状态刷新也保持隐藏\n        b.title = on ? 'AI 自动驾驶运行中 (F11 急停) - 点击停止' : 'AI 自动接管出招';",
-     "接管按钮状态刷新保持隐藏"),
+    # 注: 2026-10-28 主仓已从悬浮窗移除 AI 接管按钮(付费功能统一从主控台操作),
+    # 免费版不再需要单独隐藏 —— 同步过来就已经没有了。
     ("src/gui/web/battle_hud.html",
      '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
      'AI 军师建议对免费版完整可用',
