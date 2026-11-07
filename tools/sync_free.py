@@ -370,11 +370,13 @@ SOURCE_PATCHES = [
      '            interception.auto_capture_devices()\n'
      '            return HealthMixin._mk("driver", "按键驱动", "ok",\n'
      '                                   "键盘驱动正常 (自动丢球与挂机功能就绪)")\n'
-     '        except Exception as e:\n'
+     '        except Exception:\n'
      '            return HealthMixin._mk(\n'
-     '                "driver", "按键驱动", "fail", "按键驱动未安装或被拦截",\n'
-     '                "自动丢球/挂机需要此驱动: 请重新安装助手并允许驱动安装，"\n'
-     '                "或右键以管理员身份运行一次")',
+     '                "driver", "按键驱动", "fail", "Interception 驱动未安装",\n'
+     '                "首次使用需装一次(装完重启电脑): ①管理员运行安装器"\n'
+     '                "(包内「驱动安装」目录, 或 github.com/oblitum/Interception 下载) "\n'
+     '                "→ ②窗口里按任意键继续 → ③重启电脑。"\n'
+     '                "杀软若拦截属内核驱动通用误报, 选「仍要运行」即可")',
      '    def _probe_interception() -> dict:\n'
      '        """[FREE BUILD] 输入驱动: 连点器硬件级注入(interception)检测。\n'
      '        驱动缺位时连点器自动回退 SendInput(功能可用但防检测弱化)"""\n'
