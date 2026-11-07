@@ -59,6 +59,14 @@ EXCLUDE_DIRS = [
     "tools",             # 主仓 tools = 构建链/调试脚本/抓包工具(免费仓有自己的 tools)
     "scripts",
     "archive",           # 主仓历史归档(旧 pywebview 壳等, 顶层 import 已删模块)
+    # 测试树: 主仓回归闸全部属付费侧, 免费树运行时零引用 (2026-11-08 补)
+    #   - test_release_dev_policy.py: 发布语义/付费硬闸判定, 注释直述付费机制
+    #   - test_rkpp_decoder_deps.py:  解码器依赖清单与事故档
+    #   - fixtures/rkpp_state_digest_*.json: 真实对局金标准, 等于状态机答案
+    # 原清单只排了 test_capture.py 一个文件, 整个目录 23 个文件仍会拷进免费树;
+    # 旧 dist_free(10-11 快照) 实测已含 13 个, 遗漏已久。免费仓自己的验收走
+    # tools/check_imports.py + compileall, 不需要 pytest。
+    "tests",
 ]
 
 # 文件级排除（相对主仓根的 POSIX 路径或通配符）
