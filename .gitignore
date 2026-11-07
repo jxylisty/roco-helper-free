@@ -31,6 +31,10 @@ _plan_free.txt
 _preview_free/
 # sync_free.py 实际产物（dist/ 规则不覆盖 dist_free）
 dist_free/
+# 发布组装目录与分发包（2026-11-08 增: 组装后的包与 zip 不该入库,
+# 它们由 dist_free + cargo 编译产物组成, 体积 600MB 级且可完全重建）
+dist_free_pkg/
+dist_free_pkg_*.zip
 _sync_log.txt
 tools/_import_report.txt
 # 本地测试产物(playwright 截图等, 对齐主仓 tools/output 惯例)

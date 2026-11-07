@@ -264,6 +264,16 @@ SOURCE_PATCHES = [
      'default=17365',
      'default=17366',
      "server_main 默认端口 17366"),
+    # 12.4) --help 文案与 docstring 里的端口示例 (2026-11-08 补): 默认值已改 17366,
+    #       但帮助文本还写着 17365, 用户 `--help` 看到的口径与行为不一致。
+    ("server_main.py",
+     "parser.add_argument(\"--port\", type=int, default=17366, help=\"服务监听端口 (默认: 17365)\")",
+     "parser.add_argument(\"--port\", type=int, default=17366, help=\"服务监听端口 (默认: 17366)\")",
+     "server_main --help 端口文案"),
+    ("server_main.py",
+     "python server_main.py --port 17365    # 指定端口",
+     "python server_main.py --port 17366    # 指定端口",
+     "server_main docstring 端口示例"),
     ("src-tauri/src/main.rs",
      '127.0.0.1:17365',
      '127.0.0.1:17366',
@@ -284,6 +294,30 @@ SOURCE_PATCHES = [
      "        const wsHost = _wsHostOk ? window.location.host : '127.0.0.1:17365';",
      "        // [FREE BUILD] 同 API_BASE: Tauri 下 location.host 是 tauri.localhost, 硬编码\n        const wsHost = '127.0.0.1:17366';",
      "适配器 WS host 硬编码 17366"),
+    # 12.1) AI 对战页 MCP 自检结果里的端口文案 (2026-11-08 补)
+    #       前面几条改的是"能用"的端口, 这条是"看得见"的文案 —— 漏了口径
+    #       不一致: 免费版实际跑 17366, 界面上却告诉用户"后端端口 17365",
+    #       用户排障时会去查错端口。
+    ("src/gui/web/assets/app_aipvp.js",
+     "<div>• 后端端口 17365: ${info.port_listening",
+     "<div>• 后端端口 17366: ${info.port_listening",
+     "AI 对战 MCP 自检端口文案改口 17366"),
+    # 12.2) MCP 自检的探测端口 (2026-11-08 补): 上面改的是 render 文案, 这里
+    #       改的是 probe 目标 —— 免费版后端在 17366, 探 17365 恒 not listening,
+    #       会把"未监听"这个误判回给前端。MCP 本身是付费功能, 但探测口径必须对。
+    ("src/gui/bridge_pvp.py",
+     "        mcp_script = PROJECT_ROOT / \"tools\" / \"pvp_mcp_server.py\"\n"
+     "        script_exists = mcp_script.is_file()\n"
+     "        port = 17365",
+     "        mcp_script = PROJECT_ROOT / \"tools\" / \"pvp_mcp_server.py\"\n"
+     "        script_exists = mcp_script.is_file()\n"
+     "        port = 17366",
+     "MCP 自检探测端口改 17366"),
+    # 12.3) index.html 里 MCP 说明段的端口 (AI 对战页, 付费页但文案需一致)
+    ("src/gui/web/index.html",
+     "助手本地内置 MCP Server（端口 17365）",
+     "助手本地内置 MCP Server（端口 17366）",
+     "MCP 说明文案改口 17366"),
     # 13) 去抓包化: 数据源固定+UI 隐藏+文案改口(用户不应感知"抓包"实现细节;
     #     OCR 代码整体保留为备胎, 仅 UI 不可达 — 游戏协议变更时可由作者恢复)
     ("src/gui/web/index.html",
