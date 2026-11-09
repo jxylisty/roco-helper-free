@@ -1,4 +1,5 @@
 import ast
+import json
 import re
 import textwrap
 from pathlib import Path
@@ -102,6 +103,11 @@ def remove_season_report(root: Path):
 
 
 def apply_rkpp_only(root: Path):
+    species_path = root / "src/gui/web/assets/data/shiny_species.json"
+    species = json.loads(species_path.read_text(encoding="utf-8"))
+    species.pop("BUILT_FROM", None)
+    species_path.write_text(json.dumps(species, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
     def edit(relative, transform):
         path = root / relative
         result = transform(path.read_text(encoding="utf-8"))
