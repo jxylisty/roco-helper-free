@@ -7,7 +7,7 @@
 流程: 拷贝主仓 → 应用排除清单 → 强制包含免费依赖 → 写入付费闸门存根
      → 前端 index.html/app.js 注入 FREE_BUILD 补丁 → 产出 Free 树。
 状态: v0.3 拆分定稿（2026-09-30 与作者对齐）:
-  免费(噱头): PVP 识别引擎 + AI 军师悬浮窗 + AI 设置 + 赛季战报(本机)
+  免费(噱头): PVP 识别引擎 + AI 军师悬浮窗 + AI 设置
   付费(锁页): 丢球助手/挂机引擎页 + AI 对战(接管/MCP) + 日常任务
   删除(无导航): 视觉调试台 + 工具箱 + 背包盘点 + 配置中心 + PVE 数据层
 分发前必做:
@@ -17,7 +17,10 @@
 本脚本与产出树永不包含密钥、抓包与授权核心逻辑（见 docs/功能拆分.md）。
 """
 import argparse
+import ast
 import fnmatch
+import json
+import re
 import os
 import shutil
 import sys
@@ -642,6 +645,7 @@ STUBS = {
         '        hwid 一律由后端生成(前端传入值不信任), token 落地 data/config/free_auth.json\n'
         '        后离线放行; 机器码绑定防一码多机。"""\n'
         '        import urllib.request as _ur\n'
+        '        from urllib.error import HTTPError, URLError\n'
         '        token_file = _free_token_file()\n'
         '        st = _free_verified(qq=str(qq or ""))\n'
         '        if st:\n'
@@ -653,7 +657,7 @@ STUBS = {
         '            return {"ok": False, "verified": False, "message": "请填写 QQ 号和群口令"}\n'
         '        try:\n'
         '            req = _ur.Request(\n'
-        '                "https://lucky-cell-cd0b.zzx051012-e82.workers.dev/free/verify",\n'
+        '                "https://auth.my123.bond/free/verify",\n'
         '                data=_json.dumps({"qq": qq, "group_key": group_key,\n'
         '                                  "hwid": get_hwid(),\n'
         '                                  "build_ts": FREE_BUILD_TS,\n'
@@ -661,10 +665,23 @@ STUBS = {
         '                                 ensure_ascii=False).encode("utf-8"),\n'
         '                headers={"Content-Type": "application/json",\n'
         '                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})\n'
-        '            with _ur.urlopen(req, timeout=15) as resp:\n'
-        '                data = _json.loads(resp.read().decode("utf-8"))\n'
+        '            try:\n'
+        '                response = _ur.urlopen(req, timeout=15)\n'
+        '            except HTTPError as error:\n'
+        '                with error:\n'
+        '                    try:\n'
+        '                        failure = _json.loads(error.read())\n'
+        '                    except (ValueError, UnicodeError):\n'
+        '                        failure = None\n'
+        '                message = failure.get("message") if isinstance(failure, dict) else None\n'
+        '                return {"ok": False, "verified": False,\n'
+        '                        "message": message or f"验证服务暂不可用 (HTTP {error.code})"}\n'
+        '            with response:\n'
+        '                data = _json.loads(response.read())\n'
         '            if not data.get("ok"):\n'
         '                return {"ok": False, "verified": False, "message": data.get("message", "验证失败")}\n'
+        '            if not isinstance(data.get("token"), str) or not data["token"].strip():\n'
+        '                return {"ok": False, "verified": False, "message": "验证服务未返回有效凭证，请稍后重试"}\n'
         '            token_file.parent.mkdir(parents=True, exist_ok=True)\n'
         '            token_file.write_text(_json.dumps(\n'
         '                {"qq": qq, "token": data.get("token", ""),\n'
@@ -677,8 +694,12 @@ STUBS = {
         '                pass\n'
         '            return {"ok": True, "verified": True, "nickname": data.get("nickname", ""),\n'
         '                    "message": "验证通过, 感谢支持正版"}\n'
-        '        except Exception as e:\n'
-        '            return {"ok": False, "verified": False, "message": f"验证服务不可达: {e}"}\n'
+        '        except (URLError, TimeoutError, ConnectionError):\n'
+        '            return {"ok": False, "verified": False, "message": "无法连接验证服务，请检查网络后重试"}\n'
+        '        except (ValueError, AttributeError):\n'
+        '            return {"ok": False, "verified": False, "message": "验证服务返回异常，请稍后重试"}\n'
+        '        except OSError:\n'
+        '            return {"ok": False, "verified": False, "message": "无法保存本机验证状态，请检查安装目录写权限"}\n'
     ),
     # ---- 付费自动化「物理抽壳」存根: 属性面兼容桥接层, 执行层不入树 ----
     # ★ 2026-11-09: 存根从顶层移到 src/driver/ 下。顶层摆着 auto_throw_ball.py
@@ -816,6 +837,11 @@ INJECT_FILES = [
     "src/gui/bridge_clicker.py",
     "src/gui/web/assets/merchant.js",
     "src/gui/web/assets/merchant.css",
+    "src-tauri/icons/32x32.png",
+    "src-tauri/icons/128x128.png",
+    "src-tauri/icons/128x128@2x.png",
+    "src-tauri/icons/icon.png",
+    "src-tauri/icons/icon.ico",
 ]
 
 # 免费专属模块的接线补丁: 语义同 SOURCE_PATCHES, 但锚点失效时按"已注入"幂等跳过
@@ -897,7 +923,7 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
         var wrap = document.getElementById('customModalInputWrap');
         if (!ov || !t || !d) { if (window.showToast) showToast(label + ' 为付费版功能, 请开通会员', 'warning'); return; }
         t.textContent = '付费版功能';
-        d.innerHTML = '<b>' + label + '</b> 为付费版功能。<br>免费版包含: PVP 对战识别 · AI 军师 · 赛季战报 · AI 设置。<br>'
+        d.innerHTML = '<b>' + label + '</b> 为付费版功能。<br>免费版包含: PVP 对战识别 · AI 军师 · AI 设置。<br>'
             + '开通会员请联系 QQ: <b id="freeProQq" style="cursor:pointer;user-select:all">' + PRO_QQ + '</b> (点击复制)';
         if (wrap) wrap.style.display = 'none';
         if (btn) { btn.textContent = '复制 QQ 号'; btn.style.display = ''; }
@@ -987,9 +1013,9 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
         var ov = document.createElement('div');
         ov.className = 'custom-modal-overlay';
         ov.id = 'freeVerifyOverlay';
-        ov.innerHTML = '<div class="custom-modal-panel" style="width:360px">'
-            + '<div class="custom-modal-head"><h3>入群验证</h3>'
-            + '<button class="custom-modal-close" id="freeVfClose">×</button></div>'
+        ov.innerHTML = '<div class="custom-modal-panel" role="dialog" aria-modal="true" aria-labelledby="freeVfTitle" style="width:360px">'
+            + '<div class="custom-modal-head"><h3 id="freeVfTitle">入群验证</h3>'
+            + '<button type="button" class="custom-modal-close" id="freeVfClose" aria-label="关闭入群验证">×</button></div>'
             + '<div class="custom-modal-body">'
             + '<p>PVP 实时识别需要完成免费的入群验证。<br>'
             + 'QQ 号用于绑定本机(一号一机), 群口令见 QQ 群公告。</p>'
@@ -1004,14 +1030,11 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
             + '<input type="text" id="freeVfKey" class="form-input custom-modal-input" placeholder="QQ 群口令(见群公告)" autocomplete="off">'
             + '</div></div>'
             + '<div class="custom-modal-foot">'
-            + '<button class="btn btn-ghost" id="freeVfCancel">取消</button>'
             + '<button class="btn btn-primary" id="freeVfGo">验证</button>'
             + '</div></div>';
         document.body.appendChild(ov);
         _freeVerifyOverlay = ov;
-        ov.querySelector('#freeVfCancel').onclick = function () { ov.classList.remove('show'); };
         ov.querySelector('#freeVfClose').onclick = function () { ov.classList.remove('show'); };
-        ov.onclick = function (e) { if (e.target === ov) ov.classList.remove('show'); };
         return ov;
     }
     function freeVfShowErr(ov, msg, level) {
@@ -1065,7 +1088,9 @@ window.FREE_QQ = 'FREE_QQ_PLACEHOLDER';
                     freeVfShowErr(ov, (r && r.message) || '验证失败: 口令不匹配或服务不可达, 请核对群公告后重试', 'error');
                 }
             } catch (e) {
-                freeVfShowErr(ov, '验证异常: ' + e, 'error');
+                freeVfShowErr(ov, e instanceof TypeError
+                    ? '无法连接本地助手服务。请退出助手后重新打开，再试一次。'
+                    : '验证请求失败，请稍后重试。', 'error');
             }
             goBtn.disabled = false; goBtn.textContent = '验证';
         };
@@ -1190,7 +1215,7 @@ FREE_DIST_README = """# 洛克小助手 · Free（桌面端）
 
 ## 免费版功能清单
 
-- ⚔️ **PVP 实时识别 & AI 军师**：实时推演与战况雷达 HUD 浮窗、双方阵容顶栏、属性克制即时计算、本机战报。
+- ⚔️ **PVP 实时识别 & AI 军师**：实时推演与战况雷达 HUD 浮窗、双方阵容顶栏、属性克制即时计算。
 - 🤖 **AI 智能助手**：支持填入自定义 API Key（DeepSeek/智谱/OpenAI 等），密钥仅保存在本机。
 - 🛒 **远行商人**：每日四时段货单聚合速查与倒计时、本机货单历史（免费版专属）。
 - 🧰 **实用小工具箱**：
@@ -1200,16 +1225,17 @@ FREE_DIST_README = """# 洛克小助手 · Free（桌面端）
   - 异色概率计算器（7 大渠道官方概率估算）
   - 异色摆窝规划器（背包库存导入与最优配对摆放求解）
 
-> 💡 **提示**：丢球助手、挂机引擎、日常任务一键托管、AI 对战自动驾驶接管为 Pro 会员版专属功能。
+> 💡 **提示**：赛季战报、历史复盘、丢球助手、挂机引擎、日常任务托管和 AI 自动代打为 Pro 专属功能。
 > 免费版中自动化执行层物理抽壳，不包含按键驱动与敏感自动化代码。
 
 ## 启动方式
 
 - **桌面客户端（推荐）**：
-  直接双击运行 `src-tauri/target/debug/lkwg-pvp-assistant.exe`（自动拉起后台服务）。
+  完整解压后双击 `lkwg-pvp-assistant.exe`（自动使用包内 Python 拉起后台服务）。
+- **实时对战识别**：Windows 需安装 Npcap；仅使用离线工具箱不需要。已在游戏内时，请保持助手开启，再重连游戏以接收下一次握手。
 - **纯 Python 服务模式**：
   ```bash
-  python server_main.py
+  ./python/python.exe server_main.py
   ```
   控制台服务默认运行在：`http://127.0.0.1:17366`
 
@@ -1509,6 +1535,11 @@ def main() -> None:
 
     # ★ 发布整理: 放在所有写入步骤之后, 保证清理不会被后续写文件抵消
     dist_cleanup(out_root)
+    enforce_free_release_boundary(out_root)
+    from free_rkpp_only import apply_rkpp_only, remove_season_report
+    apply_rkpp_only(out_root)
+    remove_season_report(out_root)
+    apply_free_version(out_root)
 
     print(f"[sync_free] 免费树已生成: {out_root}")
     print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
@@ -1562,6 +1593,124 @@ def dist_cleanup(out_root: Path) -> None:
             removed += 1
 
     print(f"[sync_free] 发布整理: 清理 {removed} 项开发痕迹")
+
+
+FREE_VERSION = "1.0.0"
+
+
+def apply_free_version(out_root: Path) -> None:
+    config_path = out_root / "src-tauri/tauri.conf.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["version"] = FREE_VERSION
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    for relative, pattern, replacement in (
+        ("src-tauri/Cargo.toml", r'(?m)^version = "[^"]+"$', f'version = "{FREE_VERSION}"'),
+        ("src/gui/web/assets/app_core.js", r"(?m)^const APP_VERSION = '[^']+';$",
+         f"const APP_VERSION = '{FREE_VERSION}';"),
+    ):
+        path = out_root / relative
+        source, count = re.subn(pattern, replacement, path.read_text(encoding="utf-8"))
+        if count != 1:
+            raise SystemExit(f"[sync_free] version anchor changed: {relative}")
+        path.write_text(source, encoding="utf-8")
+
+    readme = out_root / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    text = re.sub(r"(?m)^> Free v\d+\.\d+\.\d+\n\n", "", text)
+    readme.write_text(f"> Free v{FREE_VERSION}\n\n" + text, encoding="utf-8")
+
+
+def replace_free_help(html: str) -> str:
+    template = FREE_INJECT_ROOT / "help.html"
+    section = template.read_text(encoding="utf-8").strip()
+    updated, count = re.subn(r'<section class="page" id="page-help">.*?</section>',
+                             lambda match: section, html, flags=re.S)
+    if count != 1:
+        raise SystemExit("[sync_free] help page anchor changed")
+    return updated
+
+
+def enforce_free_release_boundary(out_root: Path) -> None:
+    health = out_root / "src/gui/bridge_health.py"
+    source = health.read_text(encoding="utf-8")
+    nodes = [node for node in ast.walk(ast.parse(source))
+             if isinstance(node, ast.FunctionDef) and node.name == "_probe_seadata"]
+    if len(nodes) != 1:
+        raise SystemExit("[sync_free] offline data health probe anchor changed")
+    probe = '''    def _probe_seadata() -> dict:
+        from src.pvp import seadata
+
+        for name in ("pet_index", "pet_detail", "pet_skills", "type_chart"):
+            try:
+                data = seadata.load(name)
+                if not isinstance(data, (dict, list)) or not data:
+                    raise ValueError("missing or empty dataset")
+            except Exception:
+                return HealthMixin._mk("seadata", "核心数据", "fail",
+                                       f"离线数据缺失或无法读取：{name}", "请重新解压或安装当前赛季包")
+        return HealthMixin._mk("seadata", "核心数据", "ok", "赛季离线数据已就绪")
+'''
+    node = nodes[0]
+    lines = source.splitlines(keepends=True)
+    lines[node.lineno - 1:node.end_lineno] = [probe]
+    health.write_text("".join(lines), encoding="utf-8")
+
+
+    for relative in ("src/pvp/resource_updater.py", "src/gui/ai_autopilot.py"):
+        (out_root / relative).unlink(missing_ok=True)
+
+    methods = re.compile(
+        r"resource_sync|material_sync|pvp_autopilot_\w+|pvp_battle_runner_\w+|"
+        r"ai_play_session|pvp_mcp_check|pvp_act(?:_status)?|_do_pvp_act_keys|"
+        r"_get_(?:autopilot|battle_runner|play_session)|handle_(?:act|play_session)"
+    )
+    endpoints = {"handle_act_endpoint", "handle_act_status_endpoint", "handle_mcp_check_endpoint",
+                 "handle_play_status_endpoint", "handle_play_state_endpoint", "handle_play_session_endpoint"}
+    for relative in (
+        "src/gui/bridge.py", "src/gui/bridge_pvp.py", "src/gui/bridge_pvp_act.py",
+        "src/gui/bridge_pvp_resource.py", "src/gui/local_api.py", "src/server/app.py",
+    ):
+        path = out_root / relative
+        source = path.read_text(encoding="utf-8")
+        nodes = list(ast.walk(ast.parse(source)))
+        remove = [node for node in nodes if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and (methods.fullmatch(node.name) or node.name in endpoints)]
+        if relative == "src/gui/local_api.py":
+            remove.extend(node for node in nodes if isinstance(node, ast.ClassDef) and node.name == "LocalApiServer")
+        if relative == "src/server/app.py":
+            probes = [node for node in nodes if isinstance(node, ast.Try) and any(
+                isinstance(child, ast.ImportFrom) and child.module == "src.pvp.resource_updater"
+                for child in ast.walk(node)
+            )]
+            if len(probes) != 1:
+                raise SystemExit("[sync_free] offline resource probe anchor changed")
+            remove.extend(probes)
+        lines = source.splitlines(keepends=True)
+        for node in sorted(remove, key=lambda item: item.lineno, reverse=True):
+            start = min([node.lineno, *(item.lineno for item in getattr(node, "decorator_list", ()))])
+            del lines[start - 1:node.end_lineno]
+        result = "".join(lines)
+        ast.parse(result)
+        path.write_text(result, encoding="utf-8")
+
+    web = out_root / "src/gui/web"
+    index = web / "index.html"
+    html = index.read_text(encoding="utf-8")
+    html, paid_cards = re.subn(
+        r'^[ \t]*<!-- [^\n]* B: AI [^\n]* -->\n.*?^(?=[ \t]*</section>)', "            </div>\n", html, flags=re.M | re.S)
+    html, sync_buttons = re.subn(r'<button\b[^>]*onclick="doResourceSync\(\)"[^>]*>[^<]*</button>',
+                                 '<span>图鉴随赛季安装包更新</span>', html)
+    if paid_cards != 1 or sync_buttons != 1 or 'id="mcpSelfplayCard"' in html:
+        raise SystemExit("[sync_free] free page boundary anchors changed")
+    index.write_text(replace_free_help(html), encoding="utf-8")
+
+    aipvp = web / "assets/app_aipvp.js"
+    keep = re.findall(r"^async function (?:initAiDecisionToggle|aiDecisionToggle)\(\) \{.*?^\}",
+                      aipvp.read_text(encoding="utf-8"), flags=re.M | re.S)
+    if len(keep) != 2:
+        raise SystemExit("[sync_free] adviser settings anchors changed")
+    aipvp.write_text("\n\n".join(keep) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

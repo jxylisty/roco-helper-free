@@ -1,0 +1,16 @@
+fastapi==0.141.1
+uvicorn==0.53.0
+websocket-client==1.8.0
+requests==2.34.2
+pydantic==2.13.5
+websockets==17.2
+cryptography==50.0.2
+scapy==2.7.0
+pycryptodome==3.24.1
+msgpack==1.2.3
+protobuf==6.33.6
+pywin32==312
+keyboard==0.13.5
+psutil==5.9.8
+interception-python==1.13.6
+PyYAML==6.0.2
