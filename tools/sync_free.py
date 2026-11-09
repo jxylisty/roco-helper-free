@@ -84,6 +84,15 @@ EXCLUDE_FILES = [
     "src/gui/auth_core.py",
     "src/gui/auth_core.pyd",
     "src/gui/bridge_auth.py",
+    # ★ 2026-11-09: 一切 Cython 编译产物(.pyd)不得进免费树。
+    #   事故: 主仓 2026-11-08 跑过 build_hardened.py, 在 src/gui/ 留下
+    #   auth.pyd / auth_core.pyd / bridge_auth.pyd / bridge_common.pyd。
+    #   .pyd 被 gitignore 挡住没进 git, 但 sync_free 是**按文件系统遍历**的,
+    #   于是照样拷进免费树。Python 的 import 优先级里 ExtensionFileLoader
+    #   先于 SourceFileLoader —— 同目录的 bridge_auth.pyd 直接盖住免费存根
+    #   bridge_auth.py, 结果: auth_status 抛 ModuleNotFoundError('auth_core'),
+    #   入群验证整条链路失效(实测)。免费版本就是明文分发, 不需要任何编译产物。
+    "*.pyd",
     # 付费自动化执行层（由存根顶替或直接缺席）
     "auto_throw_ball.py",             # 丢球工具本体(Interception 按键) → STUB
     "src/states/battle_engine.py",    # 挂机引擎(自动战斗) → STUB
