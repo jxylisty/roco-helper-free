@@ -101,6 +101,13 @@ EXCLUDE_FILES = [
     "src/driver/human_input.py",      # 拟人按键规划+执行层
     "src/perception/bag_scanner.py",  # 背包 OCR 盘点（付费）
     "src/perception/ball_watcher.py", # 咕噜球槽位监视（丢球辅助）
+    # ★ 2026-11-09: 纯付费 AI 代码（自动接管/自玩/视觉辅助操作）不进免费树。
+    #   军师类（只读建议/陪玩/复盘）保留，属于免费版卖点。
+    #   ai_guards 保留: 护栏/时序感知是军师建议也用的公共基础设施(只读,
+    #   不触发任何操作), 删了军师的出招窗口判定会坏。
+    "src/gui/ai_battle_runner.py",    # 排位连打编排器（AutoPilot 套 N 局循环）
+    "src/gui/ai_play_session.py",     # MCP 自玩会话（外部 AI 驱动整局）
+    "src/gui/ai_vision.py",           # AI 视觉识别（状态栏识图辅助自动操作）
     # 抓包工具与测试
     "tests/test_capture.py",
     # 构建链与密钥
@@ -389,6 +396,28 @@ SOURCE_PATCHES = [
      "        var targetWp = PRESET_WALLPAPERS[0] ? PRESET_WALLPAPERS[0].url : '';\n"
      "        paintWallpaperWithScrim(targetWp, scrim);",
      "免费版固定默认壁纸(不可切换)"),
+    # 14.2) AI 设置页去「本地豆包桥」选项: 那是开发者本地测试用的私人桥接,
+    #      免费版发出去会误导用户(以为有官方豆包服务)。保留其他公网 API 选项
+    #      (硅基流动/智谱/通义/Kimi/OpenAI/自定义), 用户填自己的 Key 就能用。
+    #      同时把 AI 视觉预设的默认值从 doubao 改成 siliconflow(推荐选项),
+    #      不然选项删了但默认值还指着它, 下拉框会是空的。
+    ("src/gui/web/assets/app_ai.js",
+     "    { id: 'doubao',     label: '本地豆包桥 (127.0.0.1:7868)', base: 'http://127.0.0.1:7868/v1', key: 'DoubaoAPI', model: 'deepseek-chat', vision: 'doubao/vision-express' },\n",
+     "",
+     "AI 设置去本地豆包桥选项(私人测试用)"),
+    ("src/gui/web/assets/app_ai.js",
+     "    sel.value = 'doubao';",
+     "    sel.value = 'siliconflow';",
+     "AI 视觉预设默认值从豆包桥改硅基流动"),
+    # 14.3) AI 对战页隐藏 MCP 自玩入口: 免费版只提供军师建议(只读),
+    #      不开放「外部 AI 接管整局对战」的 MCP 自玩通道。
+    #      直接把整个 #mcpSelfplayCard 隐藏(含状态监控/回合监控/极客抽屉等全部 MCP
+    #      相关 UI), 页面上只留军师/建议部分。app_aipvp.js 的 MCP 代码仍在
+    #      树里, 但 UI 全隐藏后用户找不到入口, 功能上等于关闭。
+    ("src/gui/web/index.html",
+     '            <div class="card card-pad" id="mcpSelfplayCard" style="max-width:920px; margin-bottom:14px;">',
+     '            <div class="card card-pad" id="mcpSelfplayCard" style="max-width:920px; margin-bottom:14px; display:none;">',
+     "AI 对战页隐藏 MCP 自玩整张卡片"),
     # 15) 健康检查「账户状态」探针: 免费树无 auth.py(物理抽壳), 懒导入必抛
     #     cannot import name 'auth' → 用户看到内部报错+误导性"重启助手"。
     #     免费版改读 _free_verified(入群验证态), 语义对齐免费版账户观。
