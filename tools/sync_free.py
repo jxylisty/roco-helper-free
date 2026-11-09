@@ -95,6 +95,7 @@ EXCLUDE_FILES = [
     "*.pyd",
     # 付费自动化执行层（由存根顶替或直接缺席）
     "auto_throw_ball.py",             # 丢球工具本体(Interception 按键) → STUB
+    "src/driver/auto_throw_ball.py",  # 同文件也不能在 src/driver 下漏入(防御性)
     "src/states/battle_engine.py",    # 挂机引擎(自动战斗) → STUB
     "src/gui/ai_autopilot.py",        # AI 接管控制器（懒导入, 闸门先行）
     "src/driver/human_input.py",      # 拟人按键规划+执行层
@@ -211,6 +212,12 @@ SOURCE_PATCHES = [
      '        # 自动更新器: 后台静默检查 GitHub 新版本(仅提示, 不自动改文件)\n        self._update_hint_sent = None\n        self.updater = AutoUpdater(on_update_available=self._notify_update_available)',
      '        # [FREE BUILD] 免费版更新走 QQ 群分发, 不启动 GitHub 更新器\n        self._update_hint_sent = None\n        self.updater = None',
      "免费版停用 GitHub 更新器"),
+    # 5.1) auto_throw_ball 存根移到 src/driver/ 下: 顶层摆着「丢球」文件名太扎眼,
+    #      用户打开包第一眼看就知道有付费功能。存根进 driver 目录语义也对。
+    ("src/gui/bridge.py",
+     'from auto_throw_ball import AutoThrowBall',
+     'from src.driver.auto_throw_ball import AutoThrowBall  # [FREE BUILD] 存根移至 driver 目录',
+     "auto_throw_ball 存根移入 src/driver/"),
     # 6) 摘除 F8 后启动日志文案同步(避免免费版日志谎称 F8 可用);
     #    主仓 2026-10 新增 Ctrl+F2 穿透热键(付费挂机链), 一并摘除
     ("src/gui/bridge_widget.py",
@@ -645,7 +652,11 @@ STUBS = {
         '            return {"ok": False, "verified": False, "message": f"验证服务不可达: {e}"}\n'
     ),
     # ---- 付费自动化「物理抽壳」存根: 属性面兼容桥接层, 执行层不入树 ----
-    "auto_throw_ball.py": (
+    # ★ 2026-11-09: 存根从顶层移到 src/driver/ 下。顶层摆着 auto_throw_ball.py
+    #   太扎眼, 用户一打开包就看到「丢球」三个字 —— 免费包里摆付费功能名,
+    #   不如藏进 driver 目录(语义也对: 这本来就是驱动层的存根)。
+    #   bridge.py 的 import 路径由下方 SOURCE_PATCHES 同步改。
+    "src/driver/auto_throw_ball.py": (
         '"""[Free 构建存根] 丢球/轰炸/技能为 Pro 功能: Interception 执行层不入免费树。\n'
         '保留窗口查询(浮窗定位)与状态属性(状态栏轮询), 动作方法一律拒绝。"""\n'
         'import ctypes\n\n'
@@ -1467,8 +1478,61 @@ def main() -> None:
         shutil.copy2(free_agents, out_root / "AGENTS.md")
         print("[sync_free] 免费版 AGENTS.md 已同步至产物树")
 
+    # ★ 发布整理: 放在所有写入步骤之后, 保证清理不会被后续写文件抵消
+    dist_cleanup(out_root)
+
     print(f"[sync_free] 免费树已生成: {out_root}")
     print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
+    print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
+
+
+def dist_cleanup(out_root: Path) -> None:
+    """发布前整理：删除开发痕迹，让用户拿到的包根目录干净。
+
+    原则：
+      - 只删「开发/构建/调试」用途的文件，运行时依赖绝对不动
+      - src/ .venv-build/ data/ 保留（业务核心 / 运行环境 / 用户数据）
+      - src-tauri/ 保留（配置文件和图标，体积不大）
+      - exe / FREE_BUILD / README / server_main.py 保留（用户入口）
+    """
+    # --- 开发文件（运行时完全不用）---
+    dev_files = [
+        "AGENTS.md", "requirements.txt",
+        "package.json", "package-lock.json",
+        ".gitignore", ".cursorignore", ".ignore",
+        "main.py",  # 历史入口，有 server_main.py 就够了
+    ]
+    removed = 0
+    for name in dev_files:
+        p = out_root / name
+        if p.exists():
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+            else:
+                p.unlink()
+            removed += 1
+
+    # --- 开发目录 ---
+    dev_dirs = ["tools", "__pycache__"]
+    for name in dev_dirs:
+        p = out_root / name
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+            removed += 1
+
+    # --- src/ 内的 __pycache__ ---
+    for pyc in out_root.rglob("__pycache__"):
+        if pyc.is_dir():
+            shutil.rmtree(pyc, ignore_errors=True)
+
+    # --- .claude / 其他编辑器残留 ---
+    for dotdir in [".claude"]:
+        p = out_root / dotdir
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+            removed += 1
+
+    print(f"[sync_free] 发布整理: 清理 {removed} 项开发痕迹")
 
 
 if __name__ == "__main__":
