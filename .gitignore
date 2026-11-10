@@ -31,6 +31,12 @@ _plan_free.txt
 _preview_free/
 # sync_free.py 实际产物（dist/ 规则不覆盖 dist_free）
 dist_free/
+dist_free_new/
+# 最终组装目录与分发包(2026-11-10: 命名改为 洛克小助手Free, 与 QQ 群分发名一致,
+# 体积 900MB 级且可完全重建)
+洛克小助手Free/
+洛克小助手Free.zip
+_test_layout/
 # 发布组装目录与分发包（2026-11-08 增: 组装后的包与 zip 不该入库,
 # 它们由 dist_free + cargo 编译产物组成, 体积 600MB 级且可完全重建）
 dist_free_pkg/

@@ -73,7 +73,13 @@ DEFAULT_MAIN = Path(r"D:\洛克王国ai\lkwgai_pvp_assistant")
 
 
 def log(msg: str) -> None:
-    print(msg, flush=True)
+    # Windows 控制台默认 GBK, 打印 "✓" 会抛 UnicodeEncodeError 让编译中途崩掉
+    # (踩过一次: 21 个模块全部编完, 死在日志行)。这里兜底降级不阻断流水线。
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        enc = (sys.stdout.encoding or "utf-8")
+        print(msg.encode(enc, errors="replace").decode(enc), flush=True)
 
 
 def die(msg: str) -> None:

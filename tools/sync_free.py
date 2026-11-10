@@ -118,6 +118,10 @@ EXCLUDE_FILES = [
     "tools/gen_worker_keys.js",
     "tools/pvp_mcp_server.py",
     "keys.json",
+    # ★ 2026-11-10: 免费版背景改纯色, 4 张二次元壁纸整体排除(省 2.2MB)。
+    #   配套补丁见 SOURCE_PATCHES 14.1(settings.js 改为不加载壁纸)。
+    #   注意: 壁纸是付费版特权, 免费版本来就没有切换入口, 删图不影响任何功能。
+    "src/gui/web/assets/img/wallpapers/*",
 ]
 
 # 强制包含（位于被排除目录内, 但免费功能依赖的文件; 优先于目录排除）
@@ -390,28 +394,20 @@ SOURCE_PATCHES = [
      '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()">',
      '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()" style="display:none">',
      "隐藏标题栏壁纸按钮"),
+    # 14.1) 免费版背景改**纯色**(2026-11-10 作者拍板):
+    #   旧行为是钉死第一张预设壁纸(霓虹少女), 用户不能换但仍加载图片。
+    #   改为纯色后: ① 视觉上与付费版一眼可辨, 免费版更"工具感";
+    #   ② 壁纸图片可整体排除出包, 省 2.2MB(见 EXCLUDE_FILES)。
+    #   传空 url → paintWallpaperWithScrim 不设 background-image,
+    #   露出 .bg-wallpaper-layer 的纯色底(#0b0f17, 与面板/文字对比度已调好)。
     ("src/gui/web/assets/settings.js",
      "        // 应用壁纸图片并同步两处 UI\n"
      "        var targetWp = custom ? custom : (PRESET_WALLPAPERS[wpIdx] ? PRESET_WALLPAPERS[wpIdx].url : '');\n"
      "        paintWallpaperWithScrim(targetWp, scrim);",
-     "        // [FREE BUILD] 壁纸切换为付费特权: 免费版永远钉死默认壁纸(第一张预设),\n"
-     "        // 用户本地存的 idx/custom 全部忽略(好看但不给换)\n"
-     "        var targetWp = PRESET_WALLPAPERS[0] ? PRESET_WALLPAPERS[0].url : '';\n"
-     "        paintWallpaperWithScrim(targetWp, scrim);",
-     "免费版固定默认壁纸(不可切换)"),
-    # 14.2) AI 设置页去「本地豆包桥」选项: 那是开发者本地测试用的私人桥接,
-    #      免费版发出去会误导用户(以为有官方豆包服务)。保留其他公网 API 选项
-    #      (硅基流动/智谱/通义/Kimi/OpenAI/自定义), 用户填自己的 Key 就能用。
-    #      同时把 AI 视觉预设的默认值从 doubao 改成 siliconflow(推荐选项),
-    #      不然选项删了但默认值还指着它, 下拉框会是空的。
-    ("src/gui/web/assets/app_ai.js",
-     "    { id: 'doubao',     label: '本地豆包桥 (127.0.0.1:7868)', base: 'http://127.0.0.1:7868/v1', key: 'DoubaoAPI', model: 'deepseek-chat', vision: 'doubao/vision-express' },\n",
-     "",
-     "AI 设置去本地豆包桥选项(私人测试用)"),
-    ("src/gui/web/assets/app_ai.js",
-     "    sel.value = 'doubao';",
-     "    sel.value = 'siliconflow';",
-     "AI 视觉预设默认值从豆包桥改硅基流动"),
+     "        // [FREE BUILD] 免费版背景固定纯色(付费版壁纸特权): 不加载任何壁纸图,\n"
+     "        // 也不理会用户本地存的 idx/custom —— 空 url 让壁纸层露出纯色底。\n"
+     "        paintWallpaperWithScrim('', scrim);",
+     "免费版纯色背景(不加载壁纸)"),
     # 14.3) AI 对战页隐藏 MCP 自玩入口: 免费版只提供军师建议(只读),
     #      不开放「外部 AI 接管整局对战」的 MCP 自玩通道。
     #      直接把整个 #mcpSelfplayCard 隐藏(含状态监控/回合监控/极客抽屉等全部 MCP
@@ -1561,6 +1557,8 @@ def dist_cleanup(out_root: Path) -> None:
         "package.json", "package-lock.json",
         ".gitignore", ".cursorignore", ".ignore",
         "main.py",  # 历史入口，有 server_main.py 就够了
+        # 本机开发说明(工作目录路径/Git 检查等)，属构建机信息，不得分发
+        "CLAUDE.local.md", "CLAUDE.md",
     ]
     removed = 0
     for name in dev_files:
