@@ -171,15 +171,9 @@ INCLUDE_FORCE_DIRS = [e for e in INCLUDE_FORCE
 # ---------------- 主仓源文件补丁（正则原文替换, 逐条可回溯） ----------------
 # 每条: (文件, 旧文本, 新文本, 说明)。命中失败会报错退出, 防止静默漂移。
 SOURCE_PATCHES = [
-    # 1) 免费版强制用户模式: DEV 页(视觉调试台)与开发者功能全隐藏
-    #    (主仓逻辑 2026-10-24 起反转为默认安全: dev_mode.marker 不存在即用户版,
-    #     免费树本就无 marker; 此补丁仍显式钉死, 双保险防 marker 误入免费树)
-    ("src/gui/bridge_common.py",
-     '_DEV_MARKER = PROJECT_ROOT / "data" / "config" / "dev_mode.marker"\nDEV_MODE = _DEV_MARKER.exists() and os.environ.get("LKW_DEV_MODE") != "0"',
-     'DEV_MODE = False  # [FREE BUILD] 免费版强制用户模式: 隐藏视觉调试台等开发者入口',
-     "钉死 DEV_MODE=False"),
-    # 2) 付费丢球三开关补闸门: toggle_normal/bomber/skill 直调 tool 未走鉴权,
-    #    执行层已抽壳(存根), 闸门保证连日志都不出、直接弹会员引导
+    # ============================================================
+    # ① 付费功能闸门 / 执行层剥离
+    # ============================================================
     ("src/gui/bridge_runtime.py",
      '    def toggle_normal(self) -> dict:\n        will_start = not self.tool.running',
      '    def toggle_normal(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 丢球为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.running',
@@ -192,9 +186,6 @@ SOURCE_PATCHES = [
      '    def toggle_skill(self) -> dict:\n        will_start = not self.tool.skill_running',
      '    def toggle_skill(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 自动技能为付费功能\n        if gate:\n            return gate\n        will_start = not self.tool.skill_running',
      "toggle_skill 补闸门"),
-    # 2b) PVP 识别引擎免费(AI 军师): 摘除 pvp_engine_start 的鉴权闸,
-    #     换成入群验证闸(防倒卖: 抓包实现不提供给未验证用户)
-    #     (锚点以 if self._pvp_running: 后缀区分 engine_start 的同款闸)
     ("src/gui/bridge_pvp.py",
      '        gate = self._auth_gate()\n        if gate:\n            return gate\n        if self._pvp_running:',
      '        # [FREE BUILD] 识别引擎免费但需入群验证(防倒卖硬闸, 前端 pvp 页同步锁)\n'
@@ -203,7 +194,6 @@ SOURCE_PATCHES = [
      '            return gate\n'
      '        if self._pvp_running:',
      "pvp_engine_start 摘鉴权闸换入群验证闸(免费识别)"),
-    # 2b-2) 抓包子系统启动硬闸: 有人在 RPC 层直接调 collector/capture 也要过验证
     ("src/gui/bridge_pvp.py",
      '    def pvp_collector_start(self) -> dict:',
      '    def pvp_collector_start(self) -> dict:\n'
@@ -211,7 +201,6 @@ SOURCE_PATCHES = [
      '        if gate:\n'
      '            return gate',
      "pvp_collector_start 补入群验证闸"),
-    # 2b-3) 数据采集手动抓一帧同理
     ("src/gui/bridge_pvp.py",
      '    def pvp_collector_manual(self) -> dict:',
      '    def pvp_collector_manual(self) -> dict:\n'
@@ -219,7 +208,6 @@ SOURCE_PATCHES = [
      '        if gate:\n'
      '            return gate',
      "pvp_collector_manual 补入群验证闸"),
-    # 2b-4) pvp.js: engine_start 被闸拒绝时(free_verify_required)弹验证引导而非无声失败
     ("src/gui/web/assets/pvp.js",
      '            const r = await pywebview.api.pvp_engine_start(src);\n'
      '            if (r.success) {\n'
@@ -231,9 +219,6 @@ SOURCE_PATCHES = [
      '            } else if (r.success) {\n'
      '                pvpEngineRunning = true;',
      "pvp.js 引擎启动失败弹验证引导"),
-    # 2c) MCP 自玩按键注入补闸(pvp_act 无鉴权直通 human_input; human_input 已排除)
-    # 2026-10-10 同步主仓签名扩展(wait_echo/sync 参数), 锚点跟随更新
-    # 2026-10-11 主仓 bridge_pvp_data 拆 7 组: pvp_act 随出招操作组迁 bridge_pvp_act.py
     ("src/gui/bridge_pvp_act.py",
      '    def pvp_act(self, action: str, delay: float = None, wait_echo: bool = False,\n'
      '                sync: bool = False) -> dict:\n'
@@ -245,43 +230,6 @@ SOURCE_PATCHES = [
      '            return gate\n'
      '        """执行一条 PVP 操作命令',
      "pvp_act 补闸门"),
-    # 3) 窗口级 F8 截图热键同样指向付费调试链路, 摘除
-    ("src/gui/bridge_widget.py",
-     "            keyboard.add_hotkey('f8', self._hotkey_snip)\n            keyboard.add_hotkey('f11', self._emergency_stop)",
-     "            # [FREE BUILD] F8 截图属 Pro 功能, 不注册; F11 急停保留\n            keyboard.add_hotkey('f11', self._emergency_stop)",
-     "摘除 F8 截图热键"),
-    # 4) 视觉工坊目录已排除, studio 静态挂载改为条件挂载(目录缺失不崩)
-    ("src/server/app.py",
-     'app.mount("/studio", StaticFiles(directory=str(STUDIO_DIR)), name="studio")',
-     'if STUDIO_DIR.exists():  # [FREE BUILD] 视觉工坊不入免费树, 缺失时跳过挂载\n    app.mount("/studio", StaticFiles(directory=str(STUDIO_DIR)), name="studio")',
-     "studio 挂载条件化"),
-    # 5) 免费版无 git 通道, 不启动 GitHub 更新器(bridge.py 顶层导入 updater 保留无害,
-    #    但 AutoUpdater 线程会真的去 fetch origin → 免费树连本地提交都没有, 静默失败无意义)
-    ("src/gui/bridge.py",
-     '        # 自动更新器: 后台静默检查 GitHub 新版本(仅提示, 不自动改文件)\n        self._update_hint_sent = None\n        self.updater = AutoUpdater(on_update_available=self._notify_update_available)',
-     '        # [FREE BUILD] 免费版更新走 QQ 群分发, 不启动 GitHub 更新器\n        self._update_hint_sent = None\n        self.updater = None',
-     "免费版停用 GitHub 更新器"),
-    # 5.1) auto_throw_ball 存根移到 src/driver/ 下: 顶层摆着「丢球」文件名太扎眼,
-    #      用户打开包第一眼看就知道有付费功能。存根进 driver 目录语义也对。
-    ("src/gui/bridge.py",
-     'from auto_throw_ball import AutoThrowBall',
-     'from src.driver.auto_throw_ball import AutoThrowBall  # [FREE BUILD] 存根移至 driver 目录',
-     "auto_throw_ball 存根移入 src/driver/"),
-    # 6) 摘除 F8 后启动日志文案同步(避免免费版日志谎称 F8 可用);
-    #    主仓 2026-10 新增 Ctrl+F2 穿透热键(付费挂机链), 一并摘除
-    ("src/gui/bridge_widget.py",
-     '            keyboard.add_hotkey(\'f11\', self._emergency_stop)\n'
-     '            keyboard.add_hotkey(\'ctrl+f2\', self._hotkey_toggle_click_through)\n'
-     '            # stdout 直打: 启动日志可追溯(热键失效时不用猜)\n'
-     '            print("[热键] keyboard 库注册完成: F8截图/F11急停/Ctrl+F2穿透开关", flush=True)\n'
-     '            self._enqueue_log("快捷键: F8截图/F11急停/Ctrl+F2穿透开关", "info")',
-     '            keyboard.add_hotkey(\'f11\', self._emergency_stop)\n'
-     '            # stdout 直打: 启动日志可追溯(热键失效时不用猜)\n'
-     '            print("[热键] keyboard 库注册完成: F11急停", flush=True)  # [FREE BUILD] F8/Ctrl+F2 属付费\n'
-     '            self._enqueue_log("快捷键: F11急停", "info")',
-     "F8 文案同步"),
-    # 7) 背包盘点(抓包计球, 辅助丢球)属付费: bag_open 是真实按键自动化, 必须硬闸
-    # 2026-10-11 主仓 bridge_pvp_data 拆 7 组: 三个 bag_* 随背包组迁 bridge_pvp_bag.py
     ("src/gui/bridge_pvp_bag.py",
      '    def bag_scan(self) -> dict:\n        """背包盘点: 优先协议直读',
      '    def bag_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """背包盘点: 优先协议直读',
@@ -294,169 +242,41 @@ SOURCE_PATCHES = [
      '    def bag_open_and_scan(self) -> dict:\n        """打开背包',
      '    def bag_open_and_scan(self) -> dict:\n        gate = self._auth_gate()  # [FREE BUILD] 背包盘点为付费功能\n        if gate:\n            return gate\n        """打开背包',
      "bag_open_and_scan 补闸门"),
-    # 8) 锁幕选择器与拆分线对齐: 主仓锁 pvp/aipvp/daily, 免费版 pvp 是噱头必须放开,
-    #    只锁 aipvp+daily
-    #    2026-10-11 主仓 app.js 六文件拆分: 该锚点随"账户登录区/VIP"落入 app_auth.js
-    ("src/gui/web/assets/app_auth.js",
-     "    document.querySelectorAll('#page-pvp, #page-aipvp, #page-daily').forEach(page => {",
-     "    document.querySelectorAll('#page-aipvp, #page-daily').forEach(page => {  // [FREE BUILD] pvp 免费",
-     "锁幕选择器对齐拆分线(pvp 摘除)"),
-    # 9) 默认落地页 = PVP 对战(免费噱头页), 而非主仓的丢球助手页;
-    #    同时改掉「vision → throw」的用户模式回退跳转(vision 已删, 回 pvp)
-    ("src/gui/web/index.html",
-     '<section class="page active" id="page-auto">',
-     '<section class="page" id="page-auto">  <!-- [FREE BUILD] 默认页改 pvp -->',
-     "默认 active 页摘除(auto)"),
-    ("src/gui/web/index.html",
-     '<section class="page" id="page-pvp">',
-     '<section class="page active" id="page-pvp">',
-     "默认 active 页置为 pvp"),
-    ("src/gui/web/index.html",
-     '<button class="nav-item active" data-page="auto" onclick="switchPage(\'throw\')">',
-     '<button class="nav-item" data-page="auto" onclick="switchPage(\'auto\')">  <!-- [FREE BUILD] alias fix + nav freedom -->',
-     "默认导航高亮摘除(auto) + onclick 修复(throw→auto)"),
-    ("src/gui/web/index.html",
-     '<button class="nav-item" data-page="pvp" onclick="switchPage(\'pvp\')">',
-     '<button class="nav-item active" data-page="pvp" onclick="switchPage(\'pvp\')">',
-     "默认导航高亮置为 pvp"),
-    # 2026-10-11 主仓 app.js 六文件拆分: 该锚点随"运行模式"落入 app_auth.js
-    ("src/gui/web/assets/app_auth.js",
-     "            if (document.querySelector('#page-vision.active')) switchPage('throw');",
-     "            if (document.querySelector('#page-auto.active')) switchPage('pvp');  // [FREE BUILD]",
-     "用户模式回退跳转改 pvp"),
-    # 11) 免费版端口独立(17366), 不与付费版(17365)互抢 — Tauri 壳 + server_main 默认端口同步改
-    ("server_main.py",
-     'default=17365',
-     'default=17366',
-     "server_main 默认端口 17366"),
-    # 12.4) --help 文案与 docstring 里的端口示例 (2026-11-08 补): 默认值已改 17366,
-    #       但帮助文本还写着 17365, 用户 `--help` 看到的口径与行为不一致。
-    ("server_main.py",
-     "parser.add_argument(\"--port\", type=int, default=17366, help=\"服务监听端口 (默认: 17365)\")",
-     "parser.add_argument(\"--port\", type=int, default=17366, help=\"服务监听端口 (默认: 17366)\")",
-     "server_main --help 端口文案"),
-    ("server_main.py",
-     "python server_main.py --port 17365    # 指定端口",
-     "python server_main.py --port 17366    # 指定端口",
-     "server_main docstring 端口示例"),
-    ("src-tauri/src/main.rs",
-     '127.0.0.1:17365',
-     '127.0.0.1:17366',
-     "Tauri 壳端口 17366(两处)"),
-    # 12) web_adapter 适配器: Tauri/WebView2 下 location.origin 是 http://tauri.localhost
-    #     (也以 http 开头, 主仓的 origin 推断必然选中它) → RPC/WS 全部打到 Tauri 静态
-    #     资源服务, 后端 17366 完全收不到 → "启动识别点了没反应"。免费版端口独立,
-    #     直接硬编码, 不做任何 origin 推断。
-    ("src/gui/web/assets/web_adapter.js",
-     "    const API_BASE = _isBackendOrigin ? _loc.origin : 'http://127.0.0.1:17365';",
-     "    // [FREE BUILD] Tauri/WebView2 的 origin 是 http://tauri.localhost(也以 http 开头),\n"
-     "    // 主仓的 origin 推断必然选错; 免费版端口独立(17366), 硬编码后端基址\n"
-     "    const API_BASE = 'http://127.0.0.1:17366';",
-     "适配器 API_BASE 硬编码 17366"),
-    ("src/gui/web/assets/web_adapter.js",
-     "        const _wsHostOk = window.location.protocol.startsWith('http') &&\n"
-     "            ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname);\n"
-     "        const wsHost = _wsHostOk ? window.location.host : '127.0.0.1:17365';",
-     "        // [FREE BUILD] 同 API_BASE: Tauri 下 location.host 是 tauri.localhost, 硬编码\n        const wsHost = '127.0.0.1:17366';",
-     "适配器 WS host 硬编码 17366"),
-    # 12.1) AI 对战页 MCP 自检结果里的端口文案 (2026-11-08 补)
-    #       前面几条改的是"能用"的端口, 这条是"看得见"的文案 —— 漏了口径
-    #       不一致: 免费版实际跑 17366, 界面上却告诉用户"后端端口 17365",
-    #       用户排障时会去查错端口。
-    ("src/gui/web/assets/app_aipvp.js",
-     "<div>• 后端端口 17365: ${info.port_listening",
-     "<div>• 后端端口 17366: ${info.port_listening",
-     "AI 对战 MCP 自检端口文案改口 17366"),
-    # 12.2) MCP 自检的探测端口 (2026-11-08 补): 上面改的是 render 文案, 这里
-    #       改的是 probe 目标 —— 免费版后端在 17366, 探 17365 恒 not listening,
-    #       会把"未监听"这个误判回给前端。MCP 本身是付费功能, 但探测口径必须对。
-    ("src/gui/bridge_pvp.py",
-     "        mcp_script = PROJECT_ROOT / \"tools\" / \"pvp_mcp_server.py\"\n"
-     "        script_exists = mcp_script.is_file()\n"
-     "        port = 17365",
-     "        mcp_script = PROJECT_ROOT / \"tools\" / \"pvp_mcp_server.py\"\n"
-     "        script_exists = mcp_script.is_file()\n"
-     "        port = 17366",
-     "MCP 自检探测端口改 17366"),
-    # 12.3) index.html 里 MCP 说明段的端口 (AI 对战页, 付费页但文案需一致)
-    ("src/gui/web/index.html",
-     "助手本地内置 MCP Server（端口 17365）",
-     "助手本地内置 MCP Server（端口 17366）",
-     "MCP 说明文案改口 17366"),
-    # 13) 去抓包化: 数据源固定+UI 隐藏+文案改口(用户不应感知"抓包"实现细节;
-    #     OCR 代码整体保留为备胎, 仅 UI 不可达 — 游戏协议变更时可由作者恢复)
-    ("src/gui/web/index.html",
-     '<select id="pvpSourceSelect" class="form-select" style="width:auto"',
-     '<select id="pvpSourceSelect" class="form-select" style="width:auto;display:none"',
-     "隐藏数据源选择框"),
-    ("src/gui/web/index.html",
-     '<div class="splash-title">洛克王国 · PVP 助手</div>',
-     '<div class="splash-title">洛克小助手</div>',
-     "splash 品牌名"),
-    ("src/gui/web/index.html",
-     'id="collectorBar" style="margin-bottom:14px"',
-     'id="collectorBar" style="margin-bottom:14px;display:none"',
-     "隐藏数据采集条(开发者工具)"),
-    ("src/gui/bridge_pvp.py",
-     '        src = str(source or "").lower()\n        if src not in ("capture", "rkpp", "ocr"):\n            src = getattr(self, "_pvp_source", "") or self._load_pvp_source() or "ocr"',
-     '        src = "rkpp"  # [FREE BUILD] 数据源固定 RKPP 全帧解码(与付费版同链路, 无 OCR);\n'
-     '        # 2026-10-04 修正: 此前误接 capture 源 — 那是半成品适配器(精灵名/血量"待补"),\n'
-     '        # 表现为对局 vs未知+无战报。rkpp 依赖: 项目同级 rkpp_ref/(rkpp_live_tools.py + Key/latest.key)',
-     "数据源固定 rkpp(全帧解码, 与付费版一致)"),
-    # 2026-10-10 主仓拆分: 抓包子系统方法搬入 bridge_pvp_source.py(PvpSourceMixin)
-    ("src/gui/bridge_pvp_source.py",
-     '"抓包子系统已启动(同构数据源)"',
-     '"实时数据通道已启动"',
-     "日志改口: 子系统启动"),
-    ("src/gui/bridge_pvp_source.py",
-     '"抓包子系统启动失败: {e}"',
-     '"实时数据通道启动失败: {e}"',
-     "日志改口: 子系统失败"),
-    ("src/gui/bridge_pvp.py",
-     '{"capture": "抓包", "rkpp": "RKPP 解码"}',
-     '{"capture": "实时数据通道", "rkpp": "极速数据通道"}',
-     "日志改口: 数据源标签(x2)"),
-    ("src/gui/bridge_pvp.py",
-     '"自研抓包源运行中"',
-     '"实时数据源运行中"',
-     "状态文案改口"),
-    ("src/gui/web/roster_bar.html",
-     '对战中 · 阵容数据未同步（主控台数据源请选「自研抓包」）',
-     '对战中 · 阵容数据未同步',
-     "阵容条文案去抓包指引"),  # 锚点已随主仓改口为「极速数据通道」, 仍命中
-    # 14) 壁纸为付费特权(作者定义的软特权, 不弹窗不加锁): 免费版无入口、不应用壁纸
-    ("src/gui/web/index.html",
-     '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()">',
-     '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()" style="display:none">',
-     "隐藏标题栏壁纸按钮"),
-    # 14.1) 免费版背景改**纯色**(2026-11-10 作者拍板):
-    #   旧行为是钉死第一张预设壁纸(霓虹少女), 用户不能换但仍加载图片。
-    #   改为纯色后: ① 视觉上与付费版一眼可辨, 免费版更"工具感";
-    #   ② 壁纸图片可整体排除出包, 省 2.2MB(见 EXCLUDE_FILES)。
-    #   传空 url → paintWallpaperWithScrim 不设 background-image,
-    #   露出 .bg-wallpaper-layer 的纯色底(#0b0f17, 与面板/文字对比度已调好)。
-    ("src/gui/web/assets/settings.js",
-     "        // 应用壁纸图片并同步两处 UI\n"
-     "        var targetWp = custom ? custom : (PRESET_WALLPAPERS[wpIdx] ? PRESET_WALLPAPERS[wpIdx].url : '');\n"
-     "        paintWallpaperWithScrim(targetWp, scrim);",
-     "        // [FREE BUILD] 免费版背景固定纯色(付费版壁纸特权): 不加载任何壁纸图,\n"
-     "        // 也不理会用户本地存的 idx/custom —— 空 url 让壁纸层露出纯色底。\n"
-     "        paintWallpaperWithScrim('', scrim);",
-     "免费版纯色背景(不加载壁纸)"),
-    # 14.3) AI 对战页隐藏 MCP 自玩入口: 免费版只提供军师建议(只读),
-    #      不开放「外部 AI 接管整局对战」的 MCP 自玩通道。
-    #      直接把整个 #mcpSelfplayCard 隐藏(含状态监控/回合监控/极客抽屉等全部 MCP
-    #      相关 UI), 页面上只留军师/建议部分。app_aipvp.js 的 MCP 代码仍在
-    #      树里, 但 UI 全隐藏后用户找不到入口, 功能上等于关闭。
-    ("src/gui/web/index.html",
-     '            <div class="card card-pad" id="mcpSelfplayCard" style="max-width:920px; margin-bottom:14px;">',
-     '            <div class="card card-pad" id="mcpSelfplayCard" style="max-width:920px; margin-bottom:14px; display:none;">',
-     "AI 对战页隐藏 MCP 自玩整张卡片"),
-    # 15) 健康检查「账户状态」探针: 免费树无 auth.py(物理抽壳), 懒导入必抛
-    #     cannot import name 'auth' → 用户看到内部报错+误导性"重启助手"。
-    #     免费版改读 _free_verified(入群验证态), 语义对齐免费版账户观。
-    #     注意: _probe_auth 是 @staticmethod, 原 try 块尾部(auth.status() 之后)
-    #     的 DEV_MODE 分支/未登录分支保留但不可达——免费版直接 return。
+    ("src/gui/bridge_widget.py",
+     "            keyboard.add_hotkey('f8', self._hotkey_snip)\n            keyboard.add_hotkey('f11', self._emergency_stop)",
+     "            # [FREE BUILD] F8 截图属 Pro 功能, 不注册; F11 急停保留\n            keyboard.add_hotkey('f11', self._emergency_stop)",
+     "摘除 F8 截图热键"),
+    ("src/gui/bridge_widget.py",
+     '            keyboard.add_hotkey(\'f11\', self._emergency_stop)\n'
+     '            keyboard.add_hotkey(\'ctrl+f2\', self._hotkey_toggle_click_through)\n'
+     '            # stdout 直打: 启动日志可追溯(热键失效时不用猜)\n'
+     '            print("[热键] keyboard 库注册完成: F8截图/F11急停/Ctrl+F2穿透开关", flush=True)\n'
+     '            self._enqueue_log("快捷键: F8截图/F11急停/Ctrl+F2穿透开关", "info")',
+     '            keyboard.add_hotkey(\'f11\', self._emergency_stop)\n'
+     '            # stdout 直打: 启动日志可追溯(热键失效时不用猜)\n'
+     '            print("[热键] keyboard 库注册完成: F11急停", flush=True)  # [FREE BUILD] F8/Ctrl+F2 属付费\n'
+     '            self._enqueue_log("快捷键: F11急停", "info")',
+     "F8 文案同步"),
+    ("src/gui/bridge.py",
+     '        # 自动更新器: 后台静默检查 GitHub 新版本(仅提示, 不自动改文件)\n        self._update_hint_sent = None\n        self.updater = AutoUpdater(on_update_available=self._notify_update_available)',
+     '        # [FREE BUILD] 免费版更新走 QQ 群分发, 不启动 GitHub 更新器\n        self._update_hint_sent = None\n        self.updater = None',
+     "免费版停用 GitHub 更新器"),
+
+    # ============================================================
+    # ② 开发模式与开发者入口
+    # ============================================================
+    ("src/gui/bridge_common.py",
+     '_DEV_MARKER = PROJECT_ROOT / "data" / "config" / "dev_mode.marker"\nDEV_MODE = _DEV_MARKER.exists() and os.environ.get("LKW_DEV_MODE") != "0"',
+     'DEV_MODE = False  # [FREE BUILD] 免费版强制用户模式: 隐藏视觉调试台等开发者入口',
+     "钉死 DEV_MODE=False"),
+    ("src/server/app.py",
+     'app.mount("/studio", StaticFiles(directory=str(STUDIO_DIR)), name="studio")',
+     'if STUDIO_DIR.exists():  # [FREE BUILD] 视觉工坊不入免费树, 缺失时跳过挂载\n    app.mount("/studio", StaticFiles(directory=str(STUDIO_DIR)), name="studio")',
+     "studio 挂载条件化"),
+    ("src/gui/bridge.py",
+     'from auto_throw_ball import AutoThrowBall',
+     'from src.driver.auto_throw_ball import AutoThrowBall  # [FREE BUILD] 存根移至 driver 目录',
+     "auto_throw_ball 存根移入 src/driver/"),
     ("src/gui/bridge_health.py",
      '    @staticmethod\n'
      '    def _probe_auth() -> dict:\n'
@@ -479,10 +299,116 @@ SOURCE_PATCHES = [
      '            from src.gui import auth\n'
      '            st = auth.status()\n',
      "健康检查账户状态改读入群验证态(免 auth 模块)"),
-    # 16) 健康检查「按键驱动」探针: 2026-10-05 连点器已升级 interception 硬件级注入
-    #     (防游戏检测封号, 用户明确要求), 驱动重新变成免费版的真实依赖。
-    #     探针改写: 驱动在 → ok(硬件级注入); 驱动缺 → warn(非 fail):
-    #     连点器自动回退 SendInput 功能不中断, 但反作弊可见性下降, 引导安装。
+
+    # ============================================================
+    # ③ 免费版端口隔离 (17365 → 17366)
+    # ============================================================
+    ("server_main.py",
+     'default=17365',
+     'default=17366',
+     "server_main 默认端口 17366"),
+    ("server_main.py",
+     "parser.add_argument(\"--port\", type=int, default=17366, help=\"服务监听端口 (默认: 17365)\")",
+     "parser.add_argument(\"--port\", type=int, default=17366, help=\"服务监听端口 (默认: 17366)\")",
+     "server_main --help 端口文案"),
+    ("server_main.py",
+     "python server_main.py --port 17365    # 指定端口",
+     "python server_main.py --port 17366    # 指定端口",
+     "server_main docstring 端口示例"),
+    ("src-tauri/src/main.rs",
+     '127.0.0.1:17365',
+     '127.0.0.1:17366',
+     "Tauri 壳端口 17366(两处)"),
+    ("src/gui/web/assets/web_adapter.js",
+     "    const API_BASE = _isBackendOrigin ? _loc.origin : 'http://127.0.0.1:17365';",
+     "    // [FREE BUILD] Tauri/WebView2 的 origin 是 http://tauri.localhost(也以 http 开头),\n"
+     "    // 主仓的 origin 推断必然选错; 免费版端口独立(17366), 硬编码后端基址\n"
+     "    const API_BASE = 'http://127.0.0.1:17366';",
+     "适配器 API_BASE 硬编码 17366"),
+    ("src/gui/web/assets/web_adapter.js",
+     "        const _wsHostOk = window.location.protocol.startsWith('http') &&\n"
+     "            ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname);\n"
+     "        const wsHost = _wsHostOk ? window.location.host : '127.0.0.1:17365';",
+     "        // [FREE BUILD] 同 API_BASE: Tauri 下 location.host 是 tauri.localhost, 硬编码\n        const wsHost = '127.0.0.1:17366';",
+     "适配器 WS host 硬编码 17366"),
+    ("src/gui/web/assets/app_aipvp.js",
+     "<div>• 后端端口 17365: ${info.port_listening",
+     "<div>• 后端端口 17366: ${info.port_listening",
+     "AI 对战 MCP 自检端口文案改口 17366"),
+    ("src/gui/bridge_pvp.py",
+     "        mcp_script = PROJECT_ROOT / \"tools\" / \"pvp_mcp_server.py\"\n"
+     "        script_exists = mcp_script.is_file()\n"
+     "        port = 17365",
+     "        mcp_script = PROJECT_ROOT / \"tools\" / \"pvp_mcp_server.py\"\n"
+     "        script_exists = mcp_script.is_file()\n"
+     "        port = 17366",
+     "MCP 自检探测端口改 17366"),
+    ("src/gui/web/index.html",
+     "助手本地内置 MCP Server（端口 17365）",
+     "助手本地内置 MCP Server（端口 17366）",
+     "MCP 说明文案改口 17366"),
+
+    # ============================================================
+    # ④ 免费版定位: 隐藏付费 UI 与数据源
+    # ============================================================
+    ("src/gui/web/index.html",
+     '<select id="pvpSourceSelect" class="form-select" style="width:auto"',
+     '<select id="pvpSourceSelect" class="form-select" style="width:auto;display:none"',
+     "隐藏数据源选择框"),
+    ("src/gui/web/index.html",
+     'id="collectorBar" style="margin-bottom:14px"',
+     'id="collectorBar" style="margin-bottom:14px;display:none"',
+     "隐藏数据采集条(开发者工具)"),
+    ("src/gui/web/index.html",
+     '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()">',
+     '<button class="tbtn" id="tbBtnWallpaper" title="壁纸场景" onclick="toggleWallpaperPanel()" style="display:none">',
+     "隐藏标题栏壁纸按钮"),
+    ("src/gui/web/assets/settings.js",
+     "        // 应用壁纸图片并同步两处 UI\n"
+     "        var targetWp = custom ? custom : (PRESET_WALLPAPERS[wpIdx] ? PRESET_WALLPAPERS[wpIdx].url : '');\n"
+     "        paintWallpaperWithScrim(targetWp, scrim);",
+     "        // [FREE BUILD] 免费版背景固定纯色(付费版壁纸特权): 不加载任何壁纸图,\n"
+     "        // 也不理会用户本地存的 idx/custom —— 空 url 让壁纸层露出纯色底。\n"
+     "        paintWallpaperWithScrim('', scrim);",
+     "免费版纯色背景(不加载壁纸)"),
+    ("src/gui/web/index.html",
+     '            <div class="card card-pad" id="mcpSelfplayCard" style="max-width:920px; margin-bottom:14px;">',
+     '            <div class="card card-pad" id="mcpSelfplayCard" style="max-width:920px; margin-bottom:14px; display:none;">',
+     "AI 对战页隐藏 MCP 自玩整张卡片"),
+    ("src/gui/web/assets/app_auth.js",
+     "    document.querySelectorAll('#page-pvp, #page-aipvp, #page-daily').forEach(page => {",
+     "    document.querySelectorAll('#page-aipvp, #page-daily').forEach(page => {  // [FREE BUILD] pvp 免费",
+     "锁幕选择器对齐拆分线(pvp 摘除)"),
+    ("src/gui/web/index.html",
+     '<section class="page active" id="page-auto">',
+     '<section class="page" id="page-auto">  <!-- [FREE BUILD] 默认页改 pvp -->',
+     "默认 active 页摘除(auto)"),
+    ("src/gui/web/index.html",
+     '<section class="page" id="page-pvp">',
+     '<section class="page active" id="page-pvp">',
+     "默认 active 页置为 pvp"),
+    ("src/gui/web/index.html",
+     '<button class="nav-item active" data-page="auto" onclick="switchPage(\'throw\')">',
+     '<button class="nav-item" data-page="auto" onclick="switchPage(\'auto\')">  <!-- [FREE BUILD] alias fix + nav freedom -->',
+     "默认导航高亮摘除(auto) + onclick 修复(throw→auto)"),
+    ("src/gui/web/index.html",
+     '<button class="nav-item" data-page="pvp" onclick="switchPage(\'pvp\')">',
+     '<button class="nav-item active" data-page="pvp" onclick="switchPage(\'pvp\')">',
+     "默认导航高亮置为 pvp"),
+    ("src/gui/web/assets/app_auth.js",
+     "            if (document.querySelector('#page-vision.active')) switchPage('throw');",
+     "            if (document.querySelector('#page-auto.active')) switchPage('pvp');  // [FREE BUILD]",
+     "用户模式回退跳转改 pvp"),
+
+    # ============================================================
+    # ⑤ 数据源与解码路径
+    # ============================================================
+    ("src/gui/bridge_pvp.py",
+     '        src = str(source or "").lower()\n        if src not in ("capture", "rkpp", "ocr"):\n            src = getattr(self, "_pvp_source", "") or self._load_pvp_source() or "ocr"',
+     '        src = "rkpp"  # [FREE BUILD] 数据源固定 RKPP 全帧解码(与付费版同链路, 无 OCR);\n'
+     '        # 2026-10-04 修正: 此前误接 capture 源 — 那是半成品适配器(精灵名/血量"待补"),\n'
+     '        # 表现为对局 vs未知+无战报。rkpp 依赖: 项目同级 rkpp_ref/(rkpp_live_tools.py + Key/latest.key)',
+     "数据源固定 rkpp(全帧解码, 与付费版一致)"),
     ("src/gui/bridge_health.py",
      '    def _probe_interception() -> dict:\n'
      '        """按键驱动: 键盘控制是否可用"""\n'
@@ -513,15 +439,38 @@ SOURCE_PATCHES = [
      '                "连点器功能可用, 但硬件级防检测未生效; 建议安装 Interception 驱动 "\n'
      '                "(github.com/oblitum/Interception) 后重启助手")',
      "健康检查输入驱动改 interception 真实检测(回退 warn 非 fail)"),
+
+    # ============================================================
+    # ⑥ 文案与品牌
+    # ============================================================
+    ("src/gui/web/index.html",
+     '<div class="splash-title">洛克王国 · PVP 助手</div>',
+     '<div class="splash-title">洛克小助手</div>',
+     "splash 品牌名"),
+    ("src/gui/bridge_pvp_source.py",
+     '"抓包子系统已启动(同构数据源)"',
+     '"实时数据通道已启动"',
+     "日志改口: 子系统启动"),
+    ("src/gui/bridge_pvp_source.py",
+     '"抓包子系统启动失败: {e}"',
+     '"实时数据通道启动失败: {e}"',
+     "日志改口: 子系统失败"),
+    ("src/gui/bridge_pvp.py",
+     '{"capture": "抓包", "rkpp": "RKPP 解码"}',
+     '{"capture": "实时数据通道", "rkpp": "极速数据通道"}',
+     "日志改口: 数据源标签(x2)"),
+    ("src/gui/bridge_pvp.py",
+     '"自研抓包源运行中"',
+     '"实时数据源运行中"',
+     "状态文案改口"),
+    ("src/gui/web/roster_bar.html",
+     '对战中 · 阵容数据未同步（主控台数据源请选「自研抓包」）',
+     '对战中 · 阵容数据未同步',
+     "阵容条文案去抓包指引"),  # 锚点已随主仓改口为「极速数据通道」, 仍命中
     ("src/gui/web/assets/pvp.js",
      "{ ocr: '画面智能识别', capture: '实时数据通道', rkpp: '极速数据通道' }",
      "{ ocr: '实时', capture: '实时', rkpp: '实时' }",
      "前端数据源标签改口"),  # 2026-10-29 主仓统一白话数据源名, 锚点同步更新
-    # 10) 悬浮窗(battle_hud)隐藏 AI 接管: 按钮与提示文案都指向付费功能
-    #     2026-10-04 适配 3cc180d HUD 电竞级重构(hud-btn class + updateAutopilotBtn)
-    #     2026-10-11 适配主仓 battle_hud 拆分(HTML/CSS/JS 三文件):
-    # 注: 2026-10-28 主仓已从悬浮窗移除 AI 接管按钮(付费功能统一从主控台操作),
-    # 免费版不再需要单独隐藏 —— 同步过来就已经没有了。
     ("src/gui/web/battle_hud.html",
      '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
      'AI 军师建议对免费版完整可用',
@@ -530,12 +479,15 @@ SOURCE_PATCHES = [
      '「AI 接管」可在主控台 PVP 页开启 · 接管后此处同步显示执行状态',
      'AI 军师建议对免费版完整可用',
      "军师空态文案去接管引导(JS 渲染值, sigRender)"),
-    # 11) toast 置顶: 验证弹窗遮罩(custom-modal-overlay)同为 9999 且 DOM 靠后,
-    #     失败 toast 被盖在 80% 不透明毛玻璃下 = 用户眼里"验证失败没提示"
+
+    # ============================================================
+    # ⑦ 免费版前端修复
+    # ============================================================
     ("src/gui/web/assets/app.css",
      ".toast-container {\n    position: fixed; top: 16px; right: 16px; z-index: 9999;",
      ".toast-container {\n    position: fixed; top: 16px; right: 16px; z-index: 100000;  /* [FREE BUILD] 置顶: 高于全部弹窗遮罩, 报错提示不被吞 */",
      "toast 层级置顶(修复弹窗内失败提示被遮罩吞掉)"),
+
 ]
 
 # ---------------- 存根 ----------------
