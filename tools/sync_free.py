@@ -490,6 +490,46 @@ SOURCE_PATCHES = [
 
 ]
 
+# ---------------- 补丁失效分级 ----------------
+# 锚点命中 0 次时的处理策略:
+#   CRITICAL → 中断构建(安全/可启动性)
+#   其余     → 告警并继续(外观/文案/日志)
+#
+# 为什么必须分级: 50 条补丁里有 20 条锚点短于 50 字符(最短 10 字符),
+# 主仓改动一处文案就可能零命中。一刀切中断会让「改个日志措辞」直接
+# 卡死打包(2026-11-10 pvp_act 就是这么停住整个 build_free.py 的);
+# 一刀切放行则会放走真正的安全问题 —— 闸门补丁失效 = 免费版能直接用
+# 付费功能, 这类必须硬失败。
+#
+# 判据: 补丁不生效后, 免费版是否仍「安全且能启动」。
+#   ① 付费闸门(toggle_*/pvp_*/bag_*/pvp_act)  → 免费版可免费用付费功能
+#   ② 物理抽壳适配(DEV_MODE / auto_throw_ball 导入 / 健康检查免 auth)
+#      → 免费树缺对应模块, 不补丁会 import 失败或暴露开发者入口
+#   ③ 端口隔离(server_main / Tauri 壳 / web_adapter)
+#      → 免费版撞付费端口或连错服务, 起不来
+#   ④ 数据源固定 / studio 挂载(目录不入免费树, 无条件挂载会崩)
+#
+# 按说明文字匹配而非序号: 重排补丁时序号会变, 说明文字不会。
+PATCH_CRITICAL_WHY = frozenset({
+    "toggle_normal 补闸门", "toggle_bomber 补闸门", "toggle_skill 补闸门",
+    "pvp_engine_start 摘鉴权闸换入群验证闸(免费识别)",
+    "pvp_collector_start 补入群验证闸", "pvp_collector_manual 补入群验证闸",
+    "pvp_act 补闸门", "bag_scan 补闸门", "bag_open 补闸门", "bag_open_and_scan 补闸门",
+    "摘除 F8 截图热键",
+    "钉死 DEV_MODE=False",
+    "auto_throw_ball 存根移入 src/driver/",
+    "健康检查账户状态改读入群验证态(免 auth 模块)",
+    "studio 挂载条件化",
+    "server_main 默认端口 17366",
+    "Tauri 壳端口 17366(两处)",
+    "适配器 API_BASE 硬编码 17366", "适配器 WS host 硬编码 17366",
+    "数据源固定 rkpp(全帧解码, 与付费版一致)",
+})
+
+# 补丁失效告警汇总: apply_source_patches 填充, main() 结束时统一打印并落盘,
+# 避免被几十行补丁日志淹没。
+_PATCH_WARNINGS: list[str] = []
+
 # ---------------- 存根 ----------------
 # 免费树中的付费闸门: AuthUpdateMixin 是唯一闸门实现, 其余 Mixin 全量带入真文件。
 # _auth_gate 返回 {"auth_required": True} → 前端 FREE_BUILD 补丁据道拦截并弹会员引导。
@@ -1284,19 +1324,40 @@ def iter_source_files(main_root: Path):
 
 
 def apply_source_patches(main_root: Path, out_root: Path) -> None:
-    """对产出的免费树打源码补丁; 命中次数必须 ≥1(允许同锚点多处, 逐处替换),
-    零命中时检查替换文本是否已存在(幂等补丁), 仍未命中才报错。"""
+    """对产出的免费树打源码补丁。
+
+    命中 ≥1 → 替换(允许同锚点多处, 逐处替换)。
+    命中 0 且替换文本已存在 → 幂等补丁, 跳过。
+    命中 0 且未应用 → 按 PATCH_CRITICAL_WHY 分级:
+        安全/可启动性类 → 中断(补丁失效等于放开付费功能或起不来);
+        其余(外观/文案/日志) → 告警并继续, 汇总到 _PATCH_WARNINGS。
+    """
     for rel, old, new, why in SOURCE_PATCHES:
         dst = out_root / rel
         if not dst.exists():
-            raise SystemExit(f"[sync_free] 补丁目标不存在({why}): {rel}")
+            # 目标文件整个不在免费树: 安全性判断同上。付费模块被排除时
+            # 补丁本就无处可打(如 bridge_pvp_act), 但那是清单决定的, 不是
+            # 锚点漂移 —— 两种都归为「补丁没生效」, 一并分级。
+            msg = f"补丁目标不存在({why}): {rel}"
+            if why in PATCH_CRITICAL_WHY:
+                raise SystemExit(f"[sync_free] {msg}")
+            _PATCH_WARNINGS.append(f"{msg} — 该补丁未生效")
+            print(f"[sync_free] ⚠ {msg}, 已跳过(非安全类)")
+            continue
         text = dst.read_text(encoding="utf-8")
         n = text.count(old)
         if n < 1:
             if new in text:
                 print(f"[sync_free] 补丁跳过(已应用): {why} ({rel})")
                 continue
-            raise SystemExit(f"[sync_free] 补丁锚点失效({why}): {rel} 命中 0 次, 请核对主仓改动")
+            if why in PATCH_CRITICAL_WHY:
+                raise SystemExit(
+                    f"[sync_free] 补丁锚点失效({why}): {rel} 命中 0 次, 请核对主仓改动\n"
+                    f"        该补丁属安全/可启动性类, 失效会放开付费功能或让免费版起不来, "
+                    f"必须修复后才能出包。")
+            _PATCH_WARNINGS.append(f"锚点失效({why}): {rel} — 主仓改了这段文案/结构, 补丁未生效")
+            print(f"[sync_free] ⚠ 补丁锚点失效({why}): {rel}, 已跳过(非安全类)")
+            continue
         dst.write_text(text.replace(old, new), encoding="utf-8")
         print(f"[sync_free] 补丁 OK: {why} ({rel}, x{n})")
 
@@ -1525,8 +1586,33 @@ def main() -> None:
     apply_free_version(out_root)
 
     print(f"[sync_free] 免费树已生成: {out_root}")
+    _report_patch_warnings(out_root)
     print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
-    print("[sync_free] TODO: compileall 冒烟 + check_imports 复查 + 启动验证通过后才可分发")
+
+
+def _report_patch_warnings(out_root: Path) -> None:
+    """补丁失效汇总: 非安全类补丁零命中时只告警, 但必须让人看得见。
+
+    散在几十行补丁日志中间很容易被忽略, 所以结束时单独列一遍并落盘到
+    树根的 FREE_PATCH_WARNINGS.txt —— 用户把包发出去后也能对着这个文件
+    看出「哪几处免费版差异没生效」。
+    """
+    if not _PATCH_WARNINGS:
+        print("[sync_free] 补丁全部命中(或无跳过)")
+        return
+    lines = [f"本次构建有 {len(_PATCH_WARNINGS)} 条非安全类补丁未生效。",
+             "这些补丁只影响外观/文案/日志, 不影响付费闸门与启动, 故未中断构建。",
+             "如需要它们生效, 请核对主仓对应改动并更新 sync_free.py 的锚点。",
+             ""]
+    lines += [f"  - {w}" for w in _PATCH_WARNINGS]
+    text = "\n".join(lines) + "\n"
+    print("\n[sync_free] " + "=" * 56)
+    print(text.rstrip())
+    print("[sync_free] " + "=" * 56 + "\n")
+    try:
+        (out_root / "FREE_PATCH_WARNINGS.txt").write_text(text, encoding="utf-8")
+    except OSError as e:
+        print(f"[sync_free] ⚠ 告警文件写入失败: {e}")
 
 
 def dist_cleanup(out_root: Path) -> None:
@@ -1546,6 +1632,8 @@ def dist_cleanup(out_root: Path) -> None:
         "main.py",  # 历史入口，有 server_main.py 就够了
         # 本机开发说明(工作目录路径/Git 检查等)，属构建机信息，不得分发
         "CLAUDE.local.md", "CLAUDE.md",
+        # 补丁失效清单是构建期诊断产物, 不是给用户的文件
+        "FREE_PATCH_WARNINGS.txt",
     ]
     removed = 0
     for name in dev_files:
