@@ -58,7 +58,7 @@ def main():
     pth = runtime / expected
     pth.write_text(
         (f"{expected.replace('._pth', '.zip')}\n" if args.embed_zip else "Lib\nDLLs\n")
-        + ".\n..\n../rkpp_clean\nLib/site-packages\n"
+        + ".\n..\n../battle_stream\n../rkpp_clean\nLib/site-packages\n"
         "Lib/site-packages/win32\nLib/site-packages/win32/lib\nimport site\n",
         encoding="utf-8",
     )

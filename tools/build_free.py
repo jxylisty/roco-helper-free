@@ -5,7 +5,7 @@
 一次跑完免费版完整流水线，替代此前逐个手敲的 6 条命令：
 
     sync_free.py        → 生成免费代码树(含补丁/存根/排除付费层)
-    + rkpp_clean        → 放入解码器(并把本机会话密钥挡在包外)
+    + battle_stream     → 放入解码器(并把本机会话密钥挡在包外)
     + redist            → 放入环境安装器(VC++ 运行库 / WebView2)
     build_free_python   → 装内嵌 Python 运行时
     compile_free_pyd    → Cython 加固(核心算法明文 .py → .pyd)
@@ -171,27 +171,12 @@ def step_sync(out_root: Path, main: Path, rkpp: Path) -> None:
     else:
         run([sys.executable, TOOLS / "sync_free.py", "--main", main, "--out", out_root])
 
-    # 解码器: 只带运行时需要的文件, 排除 tests/tools/.git/__pycache__
-    dst = out_root / "rkpp_clean"
-    dst.mkdir(parents=True, exist_ok=True)
-    allowed_suffix = {".py", ".sqlite", ".md"}
-    allowed_names = {"LICENSE", "NOTICE"}
-    copied = 0
-    for src in rkpp.iterdir():
-        if not src.is_file():
-            continue
-        if src.suffix in allowed_suffix or src.name in allowed_names:
-            shutil.copy2(src, dst / src.name)
-            copied += 1
-    if not (dst / "rkpp_live_tools.py").is_file():
-        die(f"解码器拷贝不完整, 缺 rkpp_live_tools.py → {dst}")
-    log(f"    ✓ rkpp_clean: {copied} 个文件")
-
-    # 会话密钥必须挡在包外 —— 这是构建机自己的 key
-    key_dir = dst / "Key"
-    if key_dir.exists():
-        shutil.rmtree(key_dir)
-        log("    ✓ 已移除 rkpp_clean/Key (构建机会话密钥不入包)")
+    dst = out_root / "battle_stream"
+    run([sys.executable, main / "tools" / "release_component_names.py", "--source", rkpp, "--app", out_root])
+    for name in ("battle_stream_live_tools.py", "battle_stream_data.sqlite", "LICENSE", "NOTICE"):
+        if not (dst / name).is_file():
+            die(f"解码器拷贝不完整, 缺 {name} → {dst}")
+    log("    ✓ battle_stream: 解码器、数据库与许可署名已就绪")
 
     # 环境安装器: 缺 VC++ 运行库用户主程序起不来
     redist_src = main / "data" / "redist"
@@ -219,14 +204,17 @@ def step_python(out_root: Path, nuget: Path, wheelhouse: Path | None) -> None:
     run(cmd, cwd=FREE_REPO)
 
 
-def step_cython(out_root: Path, main: Path) -> None:
+def step_cython(out_root: Path, main: Path, defer_smoke: bool = False) -> None:
     log(f"\n[3/6] {STEP_LABELS['cython']}")
     build_py = main / ".venv-build" / "Scripts" / "python.exe"
     if not build_py.is_file():
         die(f"缺编译解释器 {build_py} (需 Python 3.12 + Cython)")
-    guard_port(17366)
-    run([sys.executable, TOOLS / "compile_free_pyd.py",
-         "--free-root", out_root, "--build-py", build_py], cwd=FREE_REPO)
+    cmd = [sys.executable, TOOLS / "compile_free_pyd.py", "--free-root", out_root, "--build-py", build_py]
+    if defer_smoke:
+        cmd.append("--skip-smoke")
+    else:
+        guard_port(17366)
+    run(cmd, cwd=FREE_REPO)
 
 
 def step_exe(out_root: Path, skip: bool) -> Path:
@@ -334,6 +322,7 @@ def main() -> None:
                     help="从指定阶段开始(断点续跑)")
     ap.add_argument("--clean", action="store_true",
                     help="先删掉输出目录再全量重建")
+    ap.add_argument("--defer-smoke", action="store_true", help="由统一发布入口对 ZIP 冒烟")
     args = ap.parse_args()
 
     main_root = args.main.resolve()
@@ -363,7 +352,7 @@ def main() -> None:
     if start_idx <= 2:
         step_python(out_root, args.nuget.resolve(), args.wheelhouse.resolve())
     if start_idx <= 3:
-        step_cython(out_root, main_root)
+        step_cython(out_root, main_root, args.defer_smoke)
     if start_idx <= 4:
         exe = step_exe(out_root, args.skip_exe)
     else:
@@ -381,7 +370,7 @@ def main() -> None:
     log("=" * 60)
     log("\n分发前提醒:")
     log("  · 解压后先跑 redist\\环境安装.bat (VC++ 运行库 + WebView2)")
-    log("  · rkpp_clean 必须与 洛克小助手Free 同级, 否则实时识别起不来")
+    log("  · 请完整解压，保留程序目录内的 battle_stream 数据组件")
     log("  · 实机验证: 启动 / 窗口定位 / 实战识别 / 悬浮窗 / AI 军师")
 
 

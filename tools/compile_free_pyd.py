@@ -16,7 +16,7 @@
 用法:
     python tools/compile_free_pyd.py --free-root <免费发布树根> [--skip-smoke]
 
-    --free-root 指向含 FREE_BUILD / src/ / rkpp_clean/ / python/ 的最终包目录。
+    --free-root 指向含 FREE_BUILD / src/ / battle_stream/ / python/ 的最终包目录。
     编译解释器默认取主仓 .venv-build (Python 3.12 + Cython + MSVC 链),
     可用 --build-py 覆盖。产物 .pyd 为 cp312-win_amd64 ABI, 与包内嵌
     Python 3.12.x 兼容 (3.12 补丁版本间扩展 ABI 稳定)。
@@ -28,7 +28,7 @@
     2. vcvars 必须先 cd 进 VC/Auxiliary/Build 再以相对名 call —— 直接 call
        绝对路径 vcvars64.bat 时 %~dp0 解析失败且报错被 >nul 吞掉, 表现为
        cl 不在 PATH、build_ext 静默无产物 (2026-11-08 修)。
-    3. rkpp_live_tools.py 保留明文 —— 它是解码器独立进程的脚本入口,
+    3. battle_stream_live_tools.py 保留明文 —— 它是解码器独立进程的脚本入口,
        python 无法直接执行 .pyd。
 """
 import argparse
@@ -56,16 +56,16 @@ MODULES: list[str] = [
     "src/capture/rkpp_state.py",
     "src/capture/rkpp_client.py",
     "src/capture/tgcp.py",
-    "rkpp_clean/rkpp_codec.py",
-    "rkpp_clean/rkpp_network.py",
-    "rkpp_clean/rkpp_opcode_payload.py",
-    "rkpp_clean/rkpp_analysis.py",
-    "rkpp_clean/rkpp_analyzer.py",
-    "rkpp_clean/rkpp_io.py",
-    "rkpp_clean/rkpp_relay.py",
-    "rkpp_clean/rkpp_reporter.py",
-    "rkpp_clean/name_service.py",
-    "rkpp_clean/RKPP_worker.py",
+    "battle_stream/battle_stream_codec.py",
+    "battle_stream/battle_stream_network.py",
+    "battle_stream/battle_stream_opcode_payload.py",
+    "battle_stream/battle_stream_analysis.py",
+    "battle_stream/battle_stream_analyzer.py",
+    "battle_stream/battle_stream_io.py",
+    "battle_stream/battle_stream_relay.py",
+    "battle_stream/battle_stream_reporter.py",
+    "battle_stream/name_service.py",
+    "battle_stream/battle_stream_worker.py",
 ]
 
 FREE_PORT = 17366
@@ -169,7 +169,7 @@ def verify_imports(root: Path) -> None:
     app_mods, rkpp_mods = [], []
     for rel in MODULES:
         stem = Path(rel).stem
-        if rel.startswith("rkpp_clean/"):
+        if rel.startswith("battle_stream/"):
             rkpp_mods.append(stem)
         else:
             app_mods.append(rel[:-3].replace("/", "."))
@@ -250,7 +250,7 @@ def smoke(root: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="免费发布树 Cython 加固 (明文 .py → .pyd)")
     ap.add_argument("--free-root", type=Path, required=True,
-                    help="发布树根 (含 FREE_BUILD / src / rkpp_clean / python)")
+                    help="发布树根 (含 FREE_BUILD / src / battle_stream / python)")
     ap.add_argument("--build-py", type=Path,
                     default=DEFAULT_MAIN / ".venv-build" / "Scripts" / "python.exe",
                     help="编译解释器 (需 Python 3.12 + Cython)")
@@ -258,7 +258,7 @@ def main() -> None:
     args = ap.parse_args()
 
     root = args.free_root.resolve()
-    for marker in ("FREE_BUILD", "src", "rkpp_clean", "python"):
+    for marker in ("FREE_BUILD", "src", "battle_stream", "python"):
         if not (root / marker).exists():
             die(f"--free-root 不是完整免费发布树 (缺 {marker}): {root}")
     build_py = args.build_py.resolve()
@@ -305,7 +305,7 @@ def main() -> None:
     log(f"[1] ✓ {len(MODULES)} 个模块 .pyd-only 形态校验通过")
 
     # 清理编译模块的陈旧 __pycache__ (pyc 不会泄露源码但会膨胀包体)
-    for d in ("src/pvp", "src/capture", "rkpp_clean"):
+    for d in ("src/pvp", "src/capture", "battle_stream"):
         cache = root / d / "__pycache__"
         if cache.is_dir():
             shutil.rmtree(cache, ignore_errors=True)
@@ -315,7 +315,7 @@ def main() -> None:
         log("[3] 已跳过冒烟 (--skip-smoke)")
     else:
         smoke(root)
-    log("[done] 免费树加固完成: 21 模块 .pyd, rkpp_live_tools.py 保持明文入口")
+    log("[done] 免费树加固完成: 21 模块 .pyd, battle_stream_live_tools.py 保持明文入口")
 
 
 if __name__ == "__main__":
