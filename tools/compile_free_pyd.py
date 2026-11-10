@@ -49,6 +49,7 @@ MODULES: list[str] = [
     "src/pvp/calc_panel.py",
     "src/pvp/calc_starfall.py",
     "src/pvp/calc_enemy_stat.py",
+    "src/pvp/star_solver.py",
     "src/pvp/damage_calculator.py",
     "src/pvp/seadata.py",
     # 批2 协议层: 抓包客户端 + 解码器

@@ -269,7 +269,7 @@ def step_zip(out_root: Path, zip_path: Path) -> None:
     # 源码树不应残留明文核心模块(只有 rkpp_live_tools.py 按设计保持明文入口)
     plain = [p for p in (out_root / "src").rglob("*.py")
              if p.stem in {"calc_damage", "calc_skill", "calc_panel", "calc_starfall",
-                           "calc_enemy_stat", "damage_calculator", "seadata",
+                           "calc_enemy_stat", "star_solver", "damage_calculator", "seadata",
                            "rkpp_protocol", "rkpp_state", "rkpp_client", "tgcp"}]
     if plain:
         die(f"核心模块仍是明文: {[str(p.relative_to(out_root)) for p in plain[:5]]}")
