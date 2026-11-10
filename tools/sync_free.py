@@ -128,10 +128,33 @@ EXCLUDE_FILES = [
 INCLUDE_FORCE = [
     "data/config/roi_templates/*.json",  # ROI 坐标模板(仅 json, 不带用户截图 png)
     "tools/diag_capture.py",             # 抓包链路 10 秒快检(用户自助排障)
+    # ★ 2026-11-10: data/pvp 的静态知识库必须入包。上面 "data/" 排除原意是
+    #   挡运行产物(data/logs 192MB、data/screenshots 293MB、cache), 但 data/pvp
+    #   下混着一批随包分发的只读数据库 —— 整目录排除把它们一起挡掉了。
+    #   实测(历史免费包 free-release-20261110): skill_icons=0 条(主仓 553)、
+    #   buff_dict=0(1974)、buff_effects=0(1919)、enemy_intel=0(142)、
+    #   skill_id_calibrated=0(14); resolve_skill_name 对真实 ID 全返回 "",
+    #   技能栏只剩裸 ID/占位符。这是「技能栏待识别」的另一半根因(路径之外)。
+    #   只带 json 本体(合计约 1.06MB); skill_icons/*.png 是 4.5MB 图片,
+    #   运行时只从 json 里取 7 位 ID、不加载图片, 故不带。
+    #   history.db / cache / *.bak / recognition_test / eval_teams.json 属
+    #   运行产物或测试夹具, 均不带。
+    "data/pvp/skill_icons.json",
+    "data/pvp/skill_id_calibrated.json",
+    "data/pvp/buff_dict.json",
+    "data/pvp/buff_effects.json",
+    "data/pvp/enemy_intel.json",
+    "data/pvp/game_descriptions.json",
+    "data/pvp/skills.json",
+    "data/pvp/pet_skills.json",
 ]
 
 # 强制包含的目录: 递归带入整目录（INCLUDE_FORCE 中以目录形式列出的条目）
-INCLUDE_FORCE_DIRS = [e for e in INCLUDE_FORCE if not e.endswith(".py")]
+#   判据是「无通配符且无扩展名」的裸目录名。旧实现用 `not endswith(".py")` 推导,
+#   于是 data/pvp/skill_icons.json 这类精确文件条目会被误当目录前缀 —— 当前
+#   靠 fnmatch 分支兜住(行为正确), 但语义错位, 新加文件时容易踩空。
+INCLUDE_FORCE_DIRS = [e for e in INCLUDE_FORCE
+                      if not any(c in e for c in "*?[") and not Path(e).suffix]
 
 # ---------------- 主仓源文件补丁（正则原文替换, 逐条可回溯） ----------------
 # 每条: (文件, 旧文本, 新文本, 说明)。命中失败会报错退出, 防止静默漂移。
