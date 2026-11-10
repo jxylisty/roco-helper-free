@@ -147,6 +147,18 @@ INCLUDE_FORCE = [
     "data/pvp/game_descriptions.json",
     "data/pvp/skills.json",
     "data/pvp/pet_skills.json",
+    # ★ 2026-11-10: 视觉链路的必需配置与属性图标模板。免费版 _watch_loop
+    #   (每 2.5s 轻量识别一帧更新观察战情) 走 VisionPipeline, 其构造函数
+    #   直接 read_text(data/config/roi_config.json) —— 该文件被
+    #   "data/config/" 整目录排除, 实测历史包创建即抛 FileNotFoundError。
+    #   虽然 _watch_loop 有 except Exception 兜底不至于崩主程序, 但观察
+    #   战情会整条静默失效。roi_config.json(7KB) 与 pet_names.txt(10KB)
+    #   是随包分发的只读基准, 不是用户状态。
+    #   data/vision/elements 的 18 张属性图标是 ElementMatcher 的模板,
+    #   digits/battle/avatars 在仓库里只有 .gitkeep(本就没有资产), 不带。
+    "data/config/roi_config.json",
+    "data/config/pet_names.txt",
+    "data/vision/elements/*.png",
 ]
 
 # 强制包含的目录: 递归带入整目录（INCLUDE_FORCE 中以目录形式列出的条目）
