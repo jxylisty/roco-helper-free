@@ -27,10 +27,17 @@ EXCLUDED_PREFIXES = (
     "src.driver.human_input",
     "src.perception.bag_scanner", "src.perception.ball_watcher",
     "src.gui.ai_autopilot",
+    # ai_vision 属付费视觉层, 整文件排除; 它的配置/探测能力已拆到
+    # ai_shared_cfg / ai_conn_probe, 谁再 import 它就是回归。
+    # (2026-11-10 免费包实机: 「测试连接」红字 No module named
+    #  'src.gui.ai_vision' —— 本清单当时漏了它, 体检报 0 处。)
+    "src.gui.ai_vision",
+    "src.gui.ai_battle_runner",
+    "src.gui.ai_play_session",
     "src.tasks",
 )
 # from src.gui import XXX 形式需要单独核对的模块名
-GUI_NAMES = {"auth", "ai_autopilot"}
+GUI_NAMES = {"auth", "ai_autopilot", "ai_vision", "ai_battle_runner", "ai_play_session"}
 
 
 def imported_excluded(node: ast.AST):
