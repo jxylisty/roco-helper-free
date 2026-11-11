@@ -51,8 +51,12 @@ for _stream in (sys.stdout, sys.stderr):
 
 TOOLS = Path(__file__).resolve().parent
 FREE_REPO = TOOLS.parent
-DEFAULT_MAIN = Path(r"D:\洛克王国ai\lkwgai_pvp_assistant")
-DEFAULT_RKPP = Path(r"D:\洛克王国ai\rkpp_clean")
+# 主仓/解码器位置各机器不同, 优先读环境变量, 缺省回退到开发机布局。
+# 两个都能用 --main / --rkpp 覆盖, 这里只是省掉每次手打绝对路径。
+DEFAULT_MAIN = Path(os.environ.get("FREE_MAIN_REPO")
+                    or r"D:\洛克王国ai\lkwgai_pvp_assistant")
+DEFAULT_RKPP = Path(os.environ.get("FREE_RKPP_DIR")
+                    or r"D:\洛克王国ai\rkpp_clean")
 DEFAULT_OUT = FREE_REPO / "洛克小助手Free"
 
 STEPS = ["sync", "runtime", "python", "cython", "exe", "zip"]
